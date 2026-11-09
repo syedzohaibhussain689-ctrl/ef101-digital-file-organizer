@@ -33,7 +33,7 @@ class ExampleRobolectricTest {
     val context = ApplicationProvider.getApplicationContext<Context>()
     assertEquals("FileOrganizer", context.getString(R.string.app_name))
 
-    val outDir = File("/.aistudio/artifacts/brain/fb9f9974-f14d-4438-9399-b453ae46f69b")
+    val outDir = File("public/screenshots")
     outDir.mkdirs()
 
     val viewModel = composeTestRule.activity.viewModels<FileOrganizerViewModel>().value
