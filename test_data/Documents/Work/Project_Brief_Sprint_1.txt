@@ -1,0 +1,4 @@
+EF101 Project Brief: Digital Photo and File Organizer
+=====================================================
+Goal: Build a clean utility that scans folders, finds duplicate files using
+byte size and SHA256 fingerprints, shows visual storage charts, and exports reports.

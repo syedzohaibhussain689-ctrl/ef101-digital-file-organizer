@@ -1,0 +1,13 @@
+{
+  "app_name": "File Organizer",
+  "scan_recursive": true,
+  "hash_algorithm": "SHA256",
+  "supported_categories": [
+    "Image",
+    "Document",
+    "Audio",
+    "Video",
+    "Archive",
+    "Other"
+  ]
+}

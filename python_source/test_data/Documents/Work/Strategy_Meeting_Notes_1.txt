@@ -1,0 +1,4 @@
+Meeting Notes:
+1. Test folder scanner on 220 sample files.
+2. Verify SHA256 duplicate groups.
+3. Export CSV report.

@@ -1,0 +1,190 @@
+﻿Digital Photo and File Organizer
+EF101 Computer Programming Project Report | Submitted by: 
+SECTION 1: Introduction and Project Goal
+1.1 What Problem Does This App Solve?
+Computers and phones become full of lots of images, PDFs of homework, audio files and random downloads in various folders. Sometimes you have several versions of the same file, saved with different names (e.g. DSC_005.jpg and DSC_005_copy.jpg). This causes wastage of gigabytes of storage.
+1.2 Why I Built It This Way
+Project Aim: A digital photo and file management application that scans through a folder and sorts them into six categories. It can find 100% duplicate files and provides charts for how much space is being used. It will sort them very neatly into folders.
+Safety: Designed to ensure you never accidentally lose any data. This is done by using Dry-Run Previews, Undo and Renaming of filename collisions.
+SECTION 2: How the System Works (Overall Flowchart)
+2.1 Step-by-Step Program Flow
+The app can be broken down into these core modules and simple steps:
+
+1) Choose folder & GUI (`main.py`): The user chooses a folder using `customtkinter` (with `tkinter.ttk.Treeview` for tables) across 6 tabs: Overview, All Files, Duplicates, Charts, Organize, and Export.
+
+2) Scan all files (`scanner.py`): Scans the chosen directory and subfolders, using the `CATEGORIES` dictionary to classify files into 6 groups and summarize totals with `summarize_files()`.
+
+3) Photo Details & Twin Detection (`image_metadata.py` & `duplicate.py`): `read_image_metadata()` extracts rich EXIF camera info, while `duplicate.py` compares file sizes and SHA-256 fingerprints to group identical twins.
+
+4) Charts, History & Safe Action (`charts.py`, `database.py`, `organizer.py`, `exporter.py`): `charts.py` renders visual storage charts, `database.py` saves scan history in SQLite (`organizer_data.db`), `organizer.py` safely moves, copies, or quarantines files with Undo support, and `exporter.py` saves reports.
+
+
+2.2 System Flowchart Diagram
+System Workflow Diagram:
+[ Select Folder ] ➔ [ Background Thread Scan (scanner.py + image_metadata.py) ] ➔ [ Two-Step Duplicate Check (duplicate.py) ] ➔ [ Save to SQLite (database.py) ] ➔ [ View in 6 GUI Tabs (Overview, All Files, Duplicates, Charts, Organize, Export) ] ➔ [ Safe Organize / Quarantine / ZIP Backup / Undo ]
+SECTION 3: Breakdown of Main Code Files and Variables
+3.1 main.py (The App Window and Dashboard)
+The `main.py` file is responsible for providing the application with a brain and GUI. The `main.py` file uses `customtkinter` (along with `tkinter.ttk.Treeview` for tabular data lists) to create interactive controls and 6 main tabs (Overview, All Files, Duplicates, Charts, Organize, and Export). This is managed by the `OrganizerApp` class.
+
+Linking All Files: Once a folder has been selected by the user, main.py will call on the scanning, duplicate finding and image analysis functions. The data from all 3 will be stored in a single dictionary (self.scanned_files, self.summary_data, and self.duplicate_data).
+
+Smooth UI: As scanning thousands of files can take some time, main.py will run this in the background using threading.Thread. This ensures the application window and progress bar run smoothly.
+
+
+3.2 scanner.py (Finding and Grouping Every File)
+The scanner.py file is used to explore the selected directory. It will search through all subdirectories and get information on files.
+
+
+Scan Directory: The scan_directory function uses os.walk to automatically scan through the main directory and subdirectories. This is done without scanning any hidden system files.
+
+
+Classify Files Into 6 Categories: The classify_file function uses the CATEGORIES dictionary to check the file extension (.jpg, .pdf, .mp3 etc.) and assign the category as being Images, Documents, Audio, Video, Archives or Other.
+
+Summary: All file names, paths, sizes (in bytes) and dates are stored in a list called files. The total number of files and sizes are calculated for each category using the summarize_files() function.
+
+
+3.3 duplicate.py (Two-Step Twin Detection Using Size and SHA256)
+The `duplicate.py` file acts as the detective of the application. It identifies any perfect duplicates of files that may have different names or be stored in different subfolders.
+
+The find_duplicates function will look at each file and group them together based on their size_bytes. This will create groups of files with the same exact byte size. Files that are not the same size will be skipped to save time.
+
+The compute_sha256 function will then look at each file in the same size group and generate a unique digital fingerprint for each file. This will look at each file in 64KB chunks.
+
+If there are two or more files with the same fingerprint they will be stored in the duplicate_groups list. The first file to be kept will be marked and then the wasted_bytes will add up the sizes of the extra files so the user knows how much storage space they can save.
+
+
+3.4 image_metadata.py (Reading Photo Details and Camera Info)
+The `image_metadata.py` is used to analyse photos. When an image file is found by the scanner, it is processed using the Pillow (PIL) library in Python to extract details.
+Extracting Image & Camera Information: The `read_image_metadata()` function extracts width, height, resolution, and format. It also extracts rich EXIF metadata including camera make, camera model, lens model, capture date, ISO speed, aperture, shutter speed, focal length, and GPS presence.
+
+
+Extracting Camera Information (EXIF): Many images contain extra digital information called EXIF. This is used to extract the camera brand (camera_make), camera model (camera_model) and date the image was taken (date_taken).
+
+
+Fallback: If there is no camera information on the downloaded image or the Pillow library is not installed on the computer the function will return N/A to prevent the app crashing.
+
+
+3.5 organizer.py (Dry Run Preview, Safe Moving, and Undo Feature)
+This file acts as the 'Safe Mover' of the project. It supports both Copy and Move modes, organizing files into neat category folders or by photo EXIF date (`Photos/YYYY-MM`), with options to create compressed backups (`create_zip_backup()`) or isolate duplicate copies in a safe `Duplicate_Quarantine/` folder (`quarantine_duplicate_file()`).
+The first step in this process is to create a dry run preview using `build_organize_plan()`. This shows a clear preview plan mapping original file paths to their target destination paths before any file is touched.
+
+
+When the user confirms, `execute_organize_plan()` performs the actual file operations. During this execution, the `get_unique_path()` helper automatically resolves name collisions by appending numbers like '_1' or '_2' to prevent overwriting existing files.
+
+
+Finally, all file actions are logged into `_LAST_BATCH_HISTORY`. Clicking the undo feature triggers `undo_last_organize()`, which iterates through the batch history in reverse to restore every file safely back to its original location.
+
+
+3.6 exporter.py (Saving Reports to CSV and JSON)
+This file acts as a "Report Printer" which will allow the user to export all the scan results to their computer. They can then open it up in Excel, Google Sheets or another program.
+
+
+1) Export the full file list (`export_to_csv()`): Takes all scanned file records and saves their name, path, category, size, date, and metadata into a clean CSV spreadsheet.
+
+
+2) Export duplicates report (`export_duplicates_to_csv()`): Generates a targeted spreadsheet listing only duplicate file groups, their SHA-256 hashes, and total wasted space.
+
+
+3) Export full JSON backup (`export_to_json()`): Exports a complete structured JSON file containing summary statistics, category counts, duplicate groups, and file metadata for easy backup or programmatic reuse.
+
+
+3.7 generate_sample_data.py (Creating Test Files and Folders)
+This file acts as a "Practice Sandbox Builder", generating a folder with sample files that can be used to test the application without causing any issues to your personal files or images.
+
+
+Step 1: Creating the Practice Folder The function create_sample_dataset generates a new folder called test_data, with realistic sub-folders such as Documents, Photos, Music and Backups.
+
+
+Step 2: Generating a variety of files The folders are populated with realistic sample files including coloured .jpg images (using Pillow), text documents (.txt), spreadsheets (.csv), audio files (.wav) and zip files (.zip).
+
+
+Step 3: Adding hidden duplicates Certain images and documents will be duplicated intentionally in different sub-folders to allow the user to instantly test the duplicate finder, Dry Run and Undo button.
+
+
+3.8 charts.py (Drawing Visual Storage Charts)
+What is the goal? Turn boring file numbers into colorful visual charts using `matplotlib` directly inside the app interface.
+How does it work? `create_dashboard_figure()` and `embed_charts_in_frame()` render four distinct visual charts: a Category Count Bar Chart, a Storage Size Horizontal Bar Chart, a Storage Share Donut Chart, and a Top 8 File Extensions Bar Chart.
+
+
+3.9 database.py (Saving Scan History and Comparing Folder Snapshots)
+What is the goal? Remember past scans using a local SQLite database (`organizer_data.db`) so we can track and compare folder changes over time.
+How does it work? `save_scan_to_db()` and `save_scan_snapshot()` record every file's path, size, and SHA-256 fingerprint. Later, `compare_snapshots()` compares two saved snapshots to highlight which files were Added, Removed, Modified, or Unchanged.
+
+
+3.10 Bonus & Extension Features Implemented
+The application includes seven advanced bonus features that make file organization powerful and safe:
+• Thumbnail Gallery View: Allows users to toggle between a standard table list and a visual grid of image thumbnails using `make_thumbnail()`.
+• Rich EXIF Viewer: Double-clicking any file opens a detail inspector displaying camera make/model, lens, ISO, aperture, shutter speed, and megapixels from `read_image_metadata()`.
+• Date-Based Photo Organization: Sorts photos automatically into structured subfolders formatted as `Photos/YYYY-MM` using embedded EXIF capture dates.
+• ZIP Archive Backup: Bundles files into a compressed `.zip` archive alongside a `backup_manifest.json` receipt via `create_zip_backup()`.
+• Safe Duplicate Review & Quarantine: Instead of deleting files immediately, extra duplicate copies can be moved safely to a `Duplicate_Quarantine/` directory using `quarantine_duplicate_file()`.
+• File Integrity Verification: Re-checks scanned items against disk using `verify_inventory_integrity()` to tag files as Intact, Modified, or Missing.
+• Saved Scan History & Snapshot Comparison: Stores folder scans in an SQLite database and compares any two historical snapshots using `compare_snapshots()` to detect file additions, removals, and modifications.
+
+
+SECTION 4: Key Programming Concepts I Used
+4.1 Why Check File Size Before Hashing? (Speed Optimization)
+The application compares the SHA256 hash, a digital fingerprint created by hashing the entire file. Reading every piece of data from the file is however extremely slow for large photos and videos.
+
+
+The application script `duplicate.py` first filters the files based on their size:
+1) Size Filter - The application loops through each file and adds them to a dictionary called size_groups based on their size_bytes. If the file has a unique size then there cannot be any twins so it can skip the file.
+
+
+2) Hash - Only run compute_sha256 on the groups with 2 or more files with the same size.
+Checking the file size is quick as the application can do this without opening the file. This means that around 90% of files can be skipped instantly. Meaning duplicates can be found almost instantly.
+
+
+4.2 Reading Files in 64 KB Chunks (Saving RAM Memory)
+When generating the SHA256 fingerprint, the app will need to process the data in the file. If the app attempted to open a large 4GB video file it would cause the RAM (temporary memory) of the computer to be filled, and cause the program to crash.
+
+To prevent this from happening the `duplicate.py` script reads the files in small chunks using `CHUNK_SIZE = 65536`:
+
+
+Small Bites: By using the while loop, the app only ever loads 64KB of the file into memory at once, feeds it into the hasher and then clears that from memory. It then moves onto the next part of the file.
+Can Handle Any File Size: This is similar to drinking a large bottle of water in sips. This means that the app can handle very large movies or zip files with very little RAM usage.
+
+
+
+
+4.3 Preventing File Overwrites with Numbered Names
+When moving files from multiple folders into one folder (such as Images) there may be cases where there are 2 completely different images with the same name (e.g. IMG_001.jpg). If the app were to move this file normally then it would overwrite the original image.
+
+In order to make sure no files are accidentally lost, the app uses a helper function within the code called get_unique_path().
+
+
+File Splitting: First the file name is split into 2 separate parts. A stem name (IMG_001) and the file type (.jpg).
+
+
+Renaming: If the file name already exists within the destination folder, a while loop will add a number onto the end of the file name to rename the file. This will rename the file to IMG_001_1.jpg (or _2, _3 if needed) until there is an entirely free spot.
+This ensures that both files are stored safely next to each other and no user data is accidentally deleted.
+
+
+4.4 How the Undo Stack Works
+If the user accidentally sorts their folder, then there is an inbuilt 'Undo' button in the app. This is handled in the organizer.py file using a list called '_LAST_BATCH_HISTORY'.
+
+
+A stack in programming works the same way as a stack of dinner plates. The last dish to go on top will be the first to come off:
+
+
+Save Actions: Every time the app moves a group of files, a list of old_path and new_path tuples will be added to the top of the '_LAST_BATCH_HISTORY'.
+
+
+Undo: When the user clicks on Undo, the undo_last_organize() function will remove the most recent group from the top of the '_LAST_BATCH_HISTORY'. It will then iterate backwards through the list using reversed() and move each file back into its original folder.
+
+
+All empty folders are also cleared up so the user's computer looks like nothing has changed.
+
+
+SECTION 5: Testing, Sample Data, and Conclusion
+5.1 Testing with the Sample Dataset
+If there was an error in the code it would be risky to run this on actual personal files, so I wrote a helper script called generate_sample_data.py which will automatically create a practice folder called test_data.
+It contains realistic sample data:
+
+Sub-folders containing sample images (.jpg), documents (.txt, .csv, .md), audio files (.wav), zipped files (.zip) and system logs.
+
+Duplicate files are also created intentionally by duplicating identical files into multiple backup folders (e.g. Photos/Vacation2024 and Backup/Photos_Archive). One file has been renamed completely differently.
+
+Using this test_data folder with the app it found all of the sub-folders, correctly sorted all 6 file types and identified all hidden duplicates using the SHA256 hash. When clicking Undo the folder was restored safely.
+5.2 What I Learned from This Project
+Building this project taught me how to break a large python application into clean, reusable modular files rather than writing one gigantic script. I learned the power of smart algorithmic choices—like filtering by file size before computing heavy SHA-256 hashes—which makes duplicate detection lightning fast. I also experienced how background threading (`threading.Thread`) keeps a user interface smooth and responsive while heavy scanning happens behind the scenes. Most importantly, I realized that writing code that touches real files requires a safe, non-destructive mindset, using dry-run previews, collision renaming, quarantine folders, and instant undo actions so users never lose their precious memories.
