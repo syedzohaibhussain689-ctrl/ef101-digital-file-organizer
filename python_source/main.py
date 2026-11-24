@@ -642,19 +642,15 @@ class ScrollFrame(tk.Frame):
         self.inner = tk.Frame(self.canvas, bg=bg)
         self.window = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
         self._seen = (0, 0, 0)
-        self.canvas.bind("<Configure>", lambda e: self._fit())
-        self.inner.bind("<Configure>", lambda e: self._fit())
-        self._watch()
+        self._fit_pending = False
+        self.canvas.bind("<Configure>", lambda e: self.schedule_fit())
+        self.inner.bind("<Configure>", lambda e: self.schedule_fit())
 
-    def _watch(self):
-        # Periodically check if the page content grew taller so the scrollbar stays accurate
-        try:
-            if (self.canvas.winfo_width(), self.canvas.winfo_height(),
-                    self.inner.winfo_reqheight()) != self._seen:
-                self._fit()
-            self.after(120, self._watch)
-        except tk.TclError:
-            pass
+    def schedule_fit(self):
+        # Coalesce rapid resize/content changes into a single layout pass without timer polling
+        if not self._fit_pending:
+            self._fit_pending = True
+            self.after_idle(self._fit)
 
     def _on_scroll(self, first, last):
         self.vbar.set(first, last)
@@ -664,12 +660,18 @@ class ScrollFrame(tk.Frame):
             self.vbar.state(["!disabled"])
 
     def _fit(self):
-        width = self.canvas.winfo_width()
-        height = self.canvas.winfo_height()
-        needed = self.inner.winfo_reqheight()
-        self._seen = (width, height, needed)
-        self.canvas.itemconfigure(self.window, width=width, height=max(needed, height))
-        self.canvas.configure(scrollregion=(0, 0, width, max(needed, height)))
+        self._fit_pending = False
+        try:
+            width = self.canvas.winfo_width()
+            height = self.canvas.winfo_height()
+            needed = self.inner.winfo_reqheight()
+            if (width, height, needed) == self._seen:
+                return
+            self._seen = (width, height, needed)
+            self.canvas.itemconfigure(self.window, width=width, height=max(needed, height))
+            self.canvas.configure(scrollregion=(0, 0, width, max(needed, height)))
+        except tk.TclError:
+            pass
 
     def scroll_to_top(self):
         self.canvas.yview_moveto(0)
@@ -693,17 +695,29 @@ class Flow(tk.Frame):
         super().__init__(parent, bg=bg, height=1)
         self.gap_x, self.gap_y = S(gap_x), S(gap_y)
         self.items = []
-        self.bind("<Configure>", lambda e: self.relayout())
+        self._relayout_pending = False
+        self._last_width = -1
+        self.bind("<Configure>", lambda e: self._schedule_relayout())
 
     def add(self, widget):
         self.items.append(widget)
-        self.after_idle(self.relayout)
+        self._last_width = -1
+        self._schedule_relayout()
+
+    def _schedule_relayout(self):
+        if not self._relayout_pending:
+            self._relayout_pending = True
+            self.after_idle(self.relayout)
 
     def relayout(self):
-        width = self.winfo_width()
-        if width <= 1 or not self.items:
+        self._relayout_pending = False
+        try:
+            width = self.winfo_width()
+        except tk.TclError:
             return
-        self.update_idletasks()
+        if width <= 1 or not self.items or width == self._last_width:
+            return
+        self._last_width = width
         x = y = row_height = 0
         for widget in self.items:
             w, h = widget.winfo_reqwidth(), widget.winfo_reqheight()
@@ -729,8 +743,9 @@ class ResponsiveGrid(tk.Frame):
 
     def set_items(self, items):
         self.items = list(items)
+        prev = self.columns
         self.columns = 0
-        self._layout(self._count())
+        self._layout(self._count(), prev_cols=prev)
 
     def _count(self):
         return max(1, (self.winfo_width() + self.gap) // (self.min_width + self.gap))
@@ -738,13 +753,14 @@ class ResponsiveGrid(tk.Frame):
     def _on_configure(self, event):
         count = self._count()
         if count != self.columns:
-            self._layout(count)
+            self._layout(count, prev_cols=self.columns)
 
-    def _layout(self, columns):
+    def _layout(self, columns, prev_cols=0):
+        old_max = max(prev_cols, self.columns, columns)
         self.columns = columns
         for widget in self.items:
             widget.grid_forget()
-        for c in range(40):
+        for c in range(columns, old_max):
             self.columnconfigure(c, weight=0, uniform="")
         for c in range(columns):
             self.columnconfigure(c, weight=1, uniform="cell")
@@ -814,7 +830,7 @@ def bar(parent, fraction, color, bg=SURFACE):
 
 
 def setup_styles(root):
-    """Styles the Tkinter scrollbars and dropdown menus so they look flat and modern."""
+    """Styles the Tkinter scrollbars, dropdown menus, and tables so they look flat and modern."""
     root.configure(bg=SURFACE)
     style = ttk.Style(root)
     style.theme_use("clam")   # The clam theme lets us customize every color freely
@@ -845,6 +861,21 @@ def setup_styles(root):
               lightcolor=[("focus", SURFACE)], darkcolor=[("focus", SURFACE)],
               arrowcolor=[("active", TEXT)])
 
+    # Flat, high-performance native Treeview table style matching the monochrome design
+    style.layout("Web.Treeview", [("Web.Treeview.treearea", {"sticky": "nswe"})])
+    style.configure("Web.Treeview", background=SURFACE, fieldbackground=SURFACE,
+                    foreground=TEXT, borderwidth=0, relief="flat",
+                    font=FN(12, "regular"), rowheight=S(38))
+    style.map("Web.Treeview",
+              background=[("selected", ACCENT_SOFT)],
+              foreground=[("selected", TEXT)])
+    style.configure("Web.Treeview.Heading", background=BG, foreground=TEXT_MUTED,
+                    relief="flat", borderwidth=0, font=FN(11, "semibold"),
+                    padding=(S(12), S(10)))
+    style.map("Web.Treeview.Heading",
+              background=[("active", ACCENT_SOFT)],
+              foreground=[("active", TEXT)])
+
     # Style the popup list that appears when you click a dropdown menu
     root.option_add("*TCombobox*Listbox.background", SURFACE)
     root.option_add("*TCombobox*Listbox.foreground", TEXT)
@@ -855,19 +886,32 @@ def setup_styles(root):
     root.option_add("*TCombobox*Listbox.font", FM(13))
 
 
+_PIL_FONT_CACHE = {}
+_TYPE_TILE_IMG_CACHE = {}
+
+
 # Helpers for creating small square photo previews and file extension tiles in Grid View
 def _pil_font(size):
+    cached = _PIL_FONT_CACHE.get(size)
+    if cached is not None:
+        return cached
     for name in (os.path.join(BASE_DIR, "fonts", "PlusJakartaSans-SemiBold.ttf"),
                  "segoeuib.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf"):
         try:
-            return ImageFont.truetype(name, size)
+            font = ImageFont.truetype(name, size)
+            _PIL_FONT_CACHE[size] = font
+            return font
         except OSError:
             continue
-    return ImageFont.load_default()
+    font = ImageFont.load_default()
+    _PIL_FONT_CACHE[size] = font
+    return font
 
 
 def make_thumbnail(path, size):
     """Creates a small square preview image of a photo, or returns None if the photo cannot be opened."""
+    if not path or not os.path.isfile(path):
+        return None
     try:
         with Image.open(path) as img:
             img.draft("RGB", (size * 2, size * 2))     # Speeds up loading huge camera photos
@@ -881,17 +925,22 @@ def make_thumbnail(path, size):
 
 
 def make_type_tile(category, extension, size):
-    """Creates a neat square tile showing the file extension (like PDF or MP3) for non photo files."""
+    """Creates (and caches) a neat square tile showing the file extension for non-photo files."""
+    key = (category or "Other", (extension or "").lower(), size)
+    cached = _TYPE_TILE_IMG_CACHE.get(key)
+    if cached is not None:
+        return cached
     tile = Image.new("RGB", (size, size), hex_rgb(ACCENT_SOFT))
     draw = ImageDraw.Draw(tile)
     bar_h = max(3, size // 28)
     draw.rectangle([0, size - bar_h, size, size], fill=hex_rgb(CAT_COLORS.get(category, "#CCCCCC")))
-    text = extension.lstrip(".").upper()[:4] or "FILE"
+    text = (extension or "").lstrip(".").upper()[:4] or "FILE"
     font = _pil_font(max(10, size // 5))
     box = draw.textbbox((0, 0), text, font=font)
     w, h = box[2] - box[0], box[3] - box[1]
     draw.text(((size - w) / 2 - box[0], (size - bar_h - h) / 2 - box[1]),
               text, fill=hex_rgb(TEXT_MUTED), font=font)
+    _TYPE_TILE_IMG_CACHE[key] = tile
     return tile
 
 
@@ -990,6 +1039,10 @@ class App:
         self.scanning = False
         self.scan_queue = None
         self.photo_cache = {}
+        self.type_tile_cache = {}
+        self._data_version = 0
+        self._page_version = {}
+        self._files_rendered_version = -1
         self.view_mode = "list"
         self.page_no = 1
         self.sort_key, self.sort_desc = "name", False
@@ -1143,7 +1196,7 @@ class App:
         if self.demo_active:
             self.render_demo_bar()
 
-    def show_page(self, page):
+    def show_page(self, page, force=False):
         self.close_modal()
         self.current = page
         for key, item in self.nav_items.items():
@@ -1152,25 +1205,32 @@ class App:
             frame.pack_forget()
 
         key = "intro" if (page == "dashboard" and not self.has_files) else page
-        if key == "intro":
-            self.render_intro()
-        elif page == "dashboard":
-            self.render_dashboard()
-        elif page == "files":
-            self.render_files_page()
-        elif page == "duplicates":
-            self.render_duplicates()
-        elif page == "charts":
-            self.render_charts()
-        elif page == "organize":
-            self.render_organize()
-        elif page == "export":
-            self.render_export()
+        needs_render = force or (self._page_version.get(key) != self._data_version)
+        if key == "files":
+            self.render_files_page(force=force)
+        elif needs_render:
+            if key == "intro":
+                self.render_intro()
+            elif page == "dashboard":
+                self.render_dashboard()
+            elif page == "duplicates":
+                self.render_duplicates()
+            elif page == "charts":
+                self.render_charts()
+            elif page == "organize":
+                self.render_organize()
+            elif page == "export":
+                self.render_export()
+            self._page_version[key] = self._data_version
         self.pages[key].pack(fill="both", expand=True, padx=S(40), pady=S(32))
         self.scroll.scroll_to_top()
+        self.scroll.schedule_fit()
 
     def reload_state(self):
         """Reads the latest file counts from the database and updates the sidebar and status bar."""
+        self._data_version += 1
+        self._page_version.clear()
+        self._files_rendered_version = -1
         count, total = database.get_totals()
         self.has_files = count > 0
         self.meta = database.get_meta()
@@ -1786,6 +1846,7 @@ class App:
     def reset_filter_state(self):
         self.page_no = 1
         self.sort_key, self.sort_desc = "name", False
+        self._files_rendered_version = -1
         if self.filters_built:
             self.search.set("")
             self.category_select.set(CATEGORY_OPTIONS[0][0])
@@ -1802,13 +1863,15 @@ class App:
         self.ext_select.set_values(["All extensions"] + database.get_extensions())
         self.folder_select.set_values(["All folders"] + database.get_folders())
 
-    def render_files_page(self):
+    def render_files_page(self, force=False):
         page = self.pages["files"]
         if not self.filters_built:
             self.build_files_controls(page)
             self.filters_built = True
             self.refresh_filter_options()
-        self.render_results()
+            force = True
+        if force or self._files_rendered_version != self._data_version:
+            self.render_results()
 
     def build_files_controls(self, page):
         head = tk.Frame(page, bg=SURFACE)
@@ -2008,113 +2071,114 @@ class App:
         prev.pack(side="right", padx=(0, S(8)))
         prev.set_enabled(self.page_no > 1)
         nxt.set_enabled(self.page_no < pages)
+        self._files_rendered_version = self._data_version
+        self.scroll.schedule_fit()
 
     def change_page(self, step):
         self.page_no += step
         self.render_results()
         self.scroll.scroll_to_top()
 
-    # Builds the rows and columns for List View
+    # Builds the rows and columns for List View using a single native ttk.Treeview (C-backed)
     def build_table(self, parent, rows):
-        table = tk.Frame(parent, bg=SURFACE)
-        table.pack(fill="x")
-        widths = [None, 112, 78, 108, 116, 130, 96]
-        # Give any leftover horizontal space to the File Name column
-        available = max(self.scroll.canvas.winfo_width() - S(82), S(700))
-        name_px = max(S(190), available - sum(S(w) for w in widths[1:]) - S(32))
-        self.name_px = name_px
-        for col, width in enumerate(widths):
-            table.columnconfigure(col, weight=1 if col == 0 else 0,
-                                  minsize=S(width) if width else name_px + S(32))
+        cols = ("name", "type", "ext", "size", "date", "folder")
+        tree = ttk.Treeview(
+            parent,
+            columns=cols,
+            show="headings",
+            style="Web.Treeview",
+            selectmode="browse",
+            height=max(1, len(rows)),
+        )
+        tree.pack(fill="x", expand=True)
 
-        heads = [("name", "Name"), ("type", "Type"), ("ext", "Ext"), ("size", "Size"),
-                 ("date", "Modified"), ("folder", "Folder"), ("act", "Actions")]
-        for col, (key, text) in enumerate(heads):
-            sortable = key in ("name", "ext", "size", "date")
+        available = max(self.scroll.canvas.winfo_width() - S(84), S(700))
+        fixed = {"type": S(104), "ext": S(82), "size": S(112), "date": S(112), "folder": S(150)}
+        name_w = max(S(240), available - sum(fixed.values()))
+
+        heads = [
+            ("name", "Name", name_w, "w", True),
+            ("type", "Type", fixed["type"], "w", False),
+            ("ext", "Ext", fixed["ext"], "w", True),
+            ("size", "Size", fixed["size"], "e", True),
+            ("date", "Modified", fixed["date"], "w", True),
+            ("folder", "Folder", fixed["folder"], "w", False),
+        ]
+        for key, text, width, anchor, sortable in heads:
             arrow = ""
             if sortable:
                 arrow = "  " + (("↓" if self.sort_desc else "↑") if self.sort_key == key else "↕")
-            head = tk.Label(table, text=sp(text.upper()) + arrow, font=FN(11, "semibold"),
-                            fg=ACCENT if (sortable and self.sort_key == key) else TEXT_MUTED,
-                            bg=SURFACE, anchor="w", bd=0, highlightthickness=0,
-                            cursor="hand2" if sortable else "")
-            head.grid(row=0, column=col, sticky="ew", padx=S(16), pady=S(12))
+            label = sp(text.upper()) + arrow
             if sortable:
-                head.bind("<Button-1>", lambda e, k=key: self.sort_by_header(k))
-                head.bind("<Enter>", lambda e, w=head: w.configure(fg=ACCENT))
-                head.bind("<Leave>", lambda e, w=head, k=key: w.configure(
-                    fg=ACCENT if self.sort_key == k else TEXT_MUTED))
-        tk.Frame(table, bg=BORDER, height=S(1)).grid(row=1, column=0, columnspan=7, sticky="ew")
+                tree.heading(key, text=label, anchor=anchor,
+                             command=lambda k=key: self.sort_by_header(k))
+            else:
+                tree.heading(key, text=label, anchor=anchor)
+            tree.column(key, width=width, minwidth=min(width, S(64)),
+                        anchor=anchor, stretch=(key == "name"))
 
-        cell_pad = dict(padx=S(16), pady=S(12))
-        for index, f in enumerate(rows):
-            r = 2 + index * 2
-            cells = []
+        tree.tag_configure("odd", background=SURFACE)
+        tree.tag_configure("even", background=BG)
+        tree.tag_configure("hover", background=GLOW)
 
-            def cell(col):
-                frame = tk.Frame(table, bg=SURFACE)
-                frame.grid(row=r, column=col, sticky="nsew")
-                cells.append(frame)
-                return frame
+        iid_to_file = {}
+        iid_base_tag = {}
+        for idx, f in enumerate(rows):
+            iid = str(f["id"])
+            base_tag = "even" if idx % 2 else "odd"
+            iid_to_file[iid] = f["id"]
+            iid_base_tag[iid] = base_tag
+            tree.insert(
+                "", "end", iid=iid, tags=(base_tag,),
+                values=(
+                    f["name"],
+                    (f["category"] or "Other").lower(),
+                    f["extension"] or "—",
+                    fmt_size(f["size_bytes"]),
+                    (f["modified_time"] or "—")[:10],
+                    f["parent_folder"] or "—",
+                ),
+            )
 
-            name = cell(0)
-            lbl(name, ellipsize(f["name"], FM(13, "medium"), self.name_px), 13, "medium", TEXT,
-                SURFACE, anchor="w").pack(anchor="w", padx=S(16), pady=(S(12), 0))
-            lbl(name, ellipsize(f["path"], FM(11), self.name_px), 11, "regular", TEXT_MUTED, SURFACE,
-                anchor="w").pack(anchor="w", padx=S(16), pady=(S(2), S(12)))
+        hovered = {"iid": None}
 
-            kind = cell(1)
-            badge = tk.Frame(kind, bg=SURFACE, highlightthickness=S(1), highlightbackground=BORDER)
-            badge.pack(anchor="w", padx=S(16), expand=True)
-            tk.Frame(badge, bg=CAT_COLORS.get(f["category"], "#CCCCCC"), width=S(7),
-                     height=S(7)).pack(side="left", padx=(S(8), 0))
-            badge_text = lbl(badge, (f["category"] or "Other").lower(), 11, "semibold", TEXT_SEC,
-                             SURFACE)
-            badge_text.pack(side="left", padx=(S(5), S(8)), pady=S(3))
-            badge.lift()
-            badge._noswap_children = True
+        def on_motion(event):
+            row_id = tree.identify_row(event.y)
+            if row_id == hovered["iid"]:
+                return
+            prev = hovered["iid"]
+            if prev and prev in iid_base_tag and tree.exists(prev):
+                tree.item(prev, tags=(iid_base_tag[prev],))
+            hovered["iid"] = row_id or None
+            if row_id and tree.exists(row_id):
+                tree.item(row_id, tags=("hover",))
+                tree.configure(cursor="hand2")
+            else:
+                tree.configure(cursor="")
 
-            ext = cell(2)
-            tk.Label(ext, text=f["extension"] or "—", font=mono(12), fg=TEXT_MUTED, bg=SURFACE,
-                     bd=0, anchor="w").pack(anchor="w", expand=True, **cell_pad)
+        def on_leave(event):
+            prev = hovered["iid"]
+            if prev and prev in iid_base_tag and tree.exists(prev):
+                tree.item(prev, tags=(iid_base_tag[prev],))
+            hovered["iid"] = None
+            tree.configure(cursor="")
 
-            size = cell(3)
-            lbl(size, fmt_size(f["size_bytes"]), 13, "medium", TEXT_SEC, SURFACE).pack(
-                anchor="w", padx=S(16), pady=(S(12), 0))
-            lbl(size, f"{f['size_bytes']:,} B", 11, "regular", TEXT_MUTED, SURFACE).pack(
-                anchor="w", padx=S(16), pady=(S(2), S(12)))
+        def on_click(event):
+            if tree.identify_region(event.x, event.y) != "cell":
+                return
+            row_id = tree.identify_row(event.y)
+            if row_id in iid_to_file:
+                self.show_details(iid_to_file[row_id])
 
-            when = cell(4)
-            lbl(when, (f["modified_time"] or "—")[:10], 13, "regular", TEXT_SEC, SURFACE).pack(
-                anchor="w", expand=True, **cell_pad)
+        def on_activate(event):
+            sel = tree.selection()
+            if sel and sel[0] in iid_to_file:
+                self.show_details(iid_to_file[sel[0]])
 
-            folder = cell(5)
-            lbl(folder, ellipsize(f["parent_folder"] or "", FM(12), S(98)), 12, "regular",
-                TEXT_MUTED, SURFACE).pack(anchor="w", expand=True, **cell_pad)
-
-            actions = cell(6)
-            details = Btn(actions, "Details", lambda file_id=f["id"]: self.show_details(file_id),
-                          px=10, py=4, size=12)
-            details.pack(anchor="w", padx=S(16), expand=True)
-
-            tk.Frame(table, bg=BORDER_LIGHT, height=S(1)).grid(
-                row=r + 1, column=0, columnspan=7, sticky="ew")
-
-            for frame in cells:
-                bind_tree(frame, "<Enter>", lambda e, c=cells: self.highlight_row(c))
-                bind_tree(frame, "<Button-1>", lambda e, i=f["id"]: self.show_details(i))
-                frame.configure(cursor="hand2")
-
-    def highlight_row(self, cells):
-        if self.hover_row is cells:
-            return
-        if self.hover_row is not None:
-            for frame in self.hover_row:
-                if frame.winfo_exists():
-                    swap_bg(frame, GLOW, SURFACE)
-        self.hover_row = cells
-        for frame in cells:
-            swap_bg(frame, SURFACE, GLOW)
+        tree.bind("<Motion>", on_motion)
+        tree.bind("<Leave>", on_leave)
+        tree.bind("<ButtonRelease-1>", on_click)
+        tree.bind("<Return>", on_activate)
 
     # Builds the square photo and file cards for Grid View
     def build_grid(self, parent, rows):
@@ -2126,16 +2190,27 @@ class App:
         grid.set_items(cards)
 
     def thumbnail_for(self, f, size):
-        key = (f["path"], size)
-        if key in self.photo_cache:
-            return self.photo_cache[key]
-        tile = None
-        if (f["extension"] or "").lower() in IMAGE_EXTENSIONS:
-            tile = make_thumbnail(f["path"], S(size))
-        if tile is None:
-            tile = make_type_tile(f["category"], f["extension"] or "", S(size))
-        self.photo_cache[key] = ImageTk.PhotoImage(tile)
-        return self.photo_cache[key]
+        ext = (f["extension"] or "").lower()
+        path = f["path"]
+        if ext in IMAGE_EXTENSIONS and path and os.path.isfile(path):
+            key = (path, size)
+            cached = self.photo_cache.get(key)
+            if cached is not None:
+                return cached
+            tile = make_thumbnail(path, S(size))
+            if tile is not None:
+                photo = ImageTk.PhotoImage(tile)
+                self.photo_cache[key] = photo
+                return photo
+
+        # Share one cached PhotoImage per (category, extension, size) for instant Grid rendering
+        tkey = (f["category"] or "Other", ext, size)
+        cached_tile = self.type_tile_cache.get(tkey)
+        if cached_tile is not None:
+            return cached_tile
+        photo = ImageTk.PhotoImage(make_type_tile(f["category"], ext, S(size)))
+        self.type_tile_cache[tkey] = photo
+        return photo
 
     def build_file_card(self, parent, f):
         outer = tk.Frame(parent, bg=BORDER, cursor="hand2")
@@ -2359,6 +2434,8 @@ class App:
         dst = organizer.quarantine_duplicate_file(file_row)
         self.reload_state()
         self.render_duplicates()
+        self._page_version["duplicates"] = self._data_version
+        self.scroll.schedule_fit()
         self.toast(f"Moved copy to Quarantine: {os.path.basename(dst)}")
 
     def fill_dup_group(self, holder, group):
@@ -2563,19 +2640,36 @@ class App:
                 wraplength=S(760), justify="left").pack(anchor="w", pady=(0, S(14)))
             hline(p_body, BORDER)
 
-            for item in plan[:40]:
-                r = tk.Frame(p_body, bg=SURFACE)
-                r.pack(fill="x", pady=S(6))
-                lbl(r, ellipsize(item["name"], FM(13, "medium"), S(220)), 13, "medium", TEXT,
-                    SURFACE, width=24, anchor="w").pack(side="left")
-                lbl(r, "→", 13, "semibold", TEXT_MUTED, SURFACE).pack(side="left", padx=S(10))
-                tk.Label(r, text=ellipsize(item["proposed_path"], FM(12), S(460)), font=mono(11),
-                         fg=TEXT_SEC, bg=SURFACE, bd=0, anchor="w").pack(side="left", fill="x", expand=True)
-                hline(p_body, BORDER_LIGHT)
+            preview_rows = plan[:60]
+            tree = ttk.Treeview(
+                p_body,
+                columns=("file", "dest", "path"),
+                show="headings",
+                style="Web.Treeview",
+                selectmode="none",
+                height=min(max(1, len(preview_rows)), 14),
+            )
+            tree.heading("file", text=sp("FILE NAME"), anchor="w")
+            tree.heading("dest", text=sp("TARGET SUBFOLDER"), anchor="w")
+            tree.heading("path", text=sp("PROPOSED PATH"), anchor="w")
+            tree.column("file", width=S(220), minwidth=S(140), anchor="w", stretch=False)
+            tree.column("dest", width=S(150), minwidth=S(100), anchor="w", stretch=False)
+            tree.column("path", width=S(420), minwidth=S(200), anchor="w", stretch=True)
+            tree.tag_configure("odd", background=SURFACE)
+            tree.tag_configure("even", background=BG)
 
-            if len(plan) > 40:
-                lbl(p_body, f"… plus {len(plan) - 40:,} more files in this dry-run plan.",
+            for idx, item in enumerate(preview_rows):
+                tree.insert(
+                    "", "end",
+                    tags=("even" if idx % 2 else "odd",),
+                    values=(item["name"], item["destination_folder"], item["proposed_path"]),
+                )
+            tree.pack(fill="x", pady=(S(6), 0))
+
+            if len(plan) > len(preview_rows):
+                lbl(p_body, f"… plus {len(plan) - len(preview_rows):,} more files in this dry-run plan.",
                     12, "regular", TEXT_MUTED, SURFACE).pack(anchor="w", pady=(S(10), 0))
+            self.scroll.schedule_fit()
 
         def run_organize():
             out_dir = self.org_output_input.value() or default_out
