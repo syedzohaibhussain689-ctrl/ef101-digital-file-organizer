@@ -918,6 +918,52 @@ NAV = [
     ("export", "Export", "file-down"),
 ]
 
+# Interactive 6-step Guided Demo Walkthrough steps covering every screen in the app
+DEMO_STEPS = [
+    {
+        "page": "dashboard",
+        "title": "Storage Dashboard Overview",
+        "description": "See total files, storage usage, recoverable duplicate space, category breakdown bars, and your 10 largest files in one view.",
+        "action_label": "Inspect Largest File",
+        "done_label": "Inspect Again",
+    },
+    {
+        "page": "files",
+        "title": "Smart Search, Filters & Grid View",
+        "description": "Search names, paths, or extensions, filter by category, size, or date range, sort any column, and switch between List and thumbnail Grid view.",
+        "action_label": "Try Image Filter + Grid",
+        "done_label": "Reset to All List",
+    },
+    {
+        "page": "duplicates",
+        "title": "Two-Step SHA-256 Duplicate Finder",
+        "description": "Identifies identical files even when renamed across folders by grouping exact byte sizes first, then verifying SHA-256 cryptographic hashes.",
+        "action_label": "Quarantine 1 Duplicate Copy",
+        "done_label": "Restore Demo Duplicates",
+    },
+    {
+        "page": "charts",
+        "title": "Visual Storage Analytics",
+        "description": "Explore 4 live visual summaries: Storage by Category, File-Size Distribution (Small to Huge), Top Extensions, and Activity Timeline.",
+        "action_label": "Inspect Sample Image",
+        "done_label": "Inspect Image Again",
+    },
+    {
+        "page": "organize",
+        "title": "Safe Dry-Run Folder Organization",
+        "description": "Choose By Category, By Year & Month, EXIF Photo Date, or By Extension and review the exact dry-run preview before moving any files.",
+        "action_label": "Preview By Year & Month",
+        "done_label": "Preview By Category",
+    },
+    {
+        "page": "export",
+        "title": "Export, Backup & SHA-256 Verification",
+        "description": "Export complete inventories to CSV or JSON, create ZIP backups, compare scan snapshots, and run live SHA-256 file integrity checks.",
+        "action_label": "Run SHA-256 Integrity Check",
+        "done_label": "Run Integrity Check Again",
+    },
+]
+
 
 class App:
     def __init__(self, root):
@@ -957,6 +1003,16 @@ class App:
         self.pages = {}
         self.nav_items = {}
 
+        # State for the interactive 6-step Guided Demo Walkthrough
+        self.demo_active = False
+        self.demo_step_index = 0
+        self.demo_autoplay = False
+        self.demo_autoplay_job = None
+        self.demo_completed = set()
+        self.demo_last_note = None
+        self._org_show_dry_run = None
+        self._export_run_integrity = None
+
         # Build the main window layout: left sidebar, top bar, center scroll area, and bottom status bar
         shell = tk.Frame(root, bg=BG)
         shell.pack(fill="both", expand=True)
@@ -964,6 +1020,7 @@ class App:
         main = tk.Frame(shell, bg=SURFACE)
         main.pack(side="left", fill="both", expand=True)
         self.build_statusbar(main)        # Pack the status bar at the bottom first so it never gets pushed off screen
+        self.demo_bar_slot = tk.Frame(main, bg=BG)
         self.build_topbar(main)
         self.scroll = ScrollFrame(main)
         self.scroll.pack(fill="both", expand=True)
@@ -1022,7 +1079,9 @@ class App:
         self.scan_time_label = lbl(right, "", 12, "medium", TEXT_MUTED, SURFACE)
         self.scan_time_label.pack(side="left", padx=(0, S(16)))
         self.rescan_btn = Btn(right, "Rescan", self.rescan, icon_name="refresh")
-        self.rescan_btn.pack(side="left")
+        self.rescan_btn.pack(side="left", padx=(0, S(8)))
+        self.demo_btn = Btn(right, "Demo", self.toggle_demo_walkthrough, icon_name="bolt")
+        self.demo_btn.pack(side="left")
 
         # This progress bar stays hidden until a folder scan actually starts
         self.progress_wrap = tk.Frame(row, bg=SURFACE)
@@ -1061,7 +1120,8 @@ class App:
     # Helper functions for popup toast messages, switching screens, and refreshing numbers
     def toast(self, message):
         self.toast_label.configure(text=message)
-        self.toast_label.place(relx=0.5, rely=1.0, y=-S(40), anchor="s")
+        y_offset = -S(215) if self.demo_active else -S(40)
+        self.toast_label.place(relx=0.5, rely=1.0, y=y_offset, anchor="s")
         self.toast_label.lift()
         if self.toast_job:
             self.root.after_cancel(self.toast_job)
@@ -1069,9 +1129,19 @@ class App:
 
     def navigate(self, page):
         if not self.has_files and page != "dashboard":
-            self.toast("Scan a folder first, or load demo data")
+            self.toast("Scan a folder first, or click Demo")
             return
+        if self.demo_active:
+            for idx, step in enumerate(DEMO_STEPS):
+                if step["page"] == page:
+                    if idx != self.demo_step_index:
+                        self.stop_demo_autoplay()
+                        self.demo_step_index = idx
+                        self.demo_last_note = None
+                    break
         self.show_page(page)
+        if self.demo_active:
+            self.render_demo_bar()
 
     def show_page(self, page):
         self.close_modal()
@@ -1159,6 +1229,8 @@ class App:
         if self.scanning:
             self.toast("A scan is already running")
             return
+        if self.demo_active:
+            self.exit_demo_walkthrough(restore_clean=False, silent=True)
         self.scanning = True
         self.folder = folder
         self.scan_status.configure(text="Reading files…")
@@ -1236,7 +1308,7 @@ class App:
         self.toast(f"Scanned {count:,} files in {seconds:.1f}s{extra}")
 
     # Creates sample demo files in the database so you can test the app right away
-    def load_demo(self):
+    def load_demo(self, show_toast=True):
         names = {
             "Image": ["photo", "portrait", "screenshot", "banner", "icon", "wallpaper", "render", "scan"],
             "Document": ["report", "invoice", "readme", "notes", "contract", "manual", "syllabus", "budget", "thesis"],
@@ -1297,7 +1369,304 @@ class App:
         self.reset_filter_state()
         self.reload_state()
         self.show_page("dashboard")
-        self.toast(f"Demo loaded: {len(rows)} files across {len(folders) + 1} folders")
+        if show_toast:
+            self.toast(f"Demo loaded: {len(rows)} files across {len(folders) + 1} folders")
+
+    # Guided Demo Walkthrough controls and live step demonstrations
+    def toggle_demo_walkthrough(self):
+        if self.demo_active:
+            self.exit_demo_walkthrough(restore_clean=False)
+        else:
+            self.start_demo_walkthrough()
+
+    def start_demo_walkthrough(self):
+        self.stop_demo_autoplay()
+        self.view_mode = "list"
+        self.load_demo(show_toast=False)
+        self.demo_active = True
+        self.demo_step_index = 0
+        self.demo_completed = set()
+        self.demo_last_note = None
+        self.demo_btn.set_text("Exit Demo")
+        self.demo_btn.set_kind("primary")
+        self.demo_bar_slot.pack(side="bottom", fill="x", before=self.scroll)
+        self.show_page(DEMO_STEPS[0]["page"])
+        self.render_demo_bar()
+
+    def exit_demo_walkthrough(self, restore_clean=False, silent=False):
+        self.stop_demo_autoplay()
+        self.close_modal()
+        self.demo_active = False
+        self.demo_step_index = 0
+        self.demo_completed = set()
+        self.demo_last_note = None
+        self.demo_bar_slot.pack_forget()
+        clear(self.demo_bar_slot)
+        self.demo_btn.set_text("Demo")
+        self.demo_btn.set_kind("default")
+        if restore_clean:
+            self.view_mode = "list"
+            self.load_demo(show_toast=False)
+        if not silent:
+            self.toast("Guided Demo finished — clean sample dataset restored."
+                       if restore_clean else "Exited Guided Demo.")
+
+    def stop_demo_autoplay(self):
+        if self.demo_autoplay_job:
+            try:
+                self.root.after_cancel(self.demo_autoplay_job)
+            except Exception:
+                pass
+            self.demo_autoplay_job = None
+        self.demo_autoplay = False
+
+    def go_to_demo_step(self, idx, from_autoplay=False):
+        clamped = max(0, min(len(DEMO_STEPS) - 1, idx))
+        if not from_autoplay:
+            self.stop_demo_autoplay()
+        self.close_modal()
+        self.demo_step_index = clamped
+        self.demo_last_note = None
+        page = DEMO_STEPS[clamped]["page"]
+        if page == "files" and clamped not in self.demo_completed:
+            self.view_mode = "list"
+            self.reset_filter_state()
+        self.show_page(page)
+        self.render_demo_bar()
+
+    def next_demo_step(self):
+        if not self.demo_active:
+            return
+        if self.demo_step_index >= len(DEMO_STEPS) - 1:
+            self.exit_demo_walkthrough(restore_clean=True)
+        else:
+            self.go_to_demo_step(self.demo_step_index + 1)
+
+    def prev_demo_step(self):
+        if self.demo_active and self.demo_step_index > 0:
+            self.go_to_demo_step(self.demo_step_index - 1)
+
+    def toggle_demo_autoplay(self):
+        if not self.demo_active:
+            return
+        if self.demo_autoplay:
+            self.stop_demo_autoplay()
+            self.render_demo_bar()
+            self.toast("Auto-play paused.")
+            return
+        self.demo_autoplay = True
+        self.render_demo_bar()
+        self._schedule_demo_autoplay()
+
+    def _schedule_demo_autoplay(self):
+        if not (self.demo_active and self.demo_autoplay):
+            return
+
+        def run_phase():
+            if not (self.demo_active and self.demo_autoplay):
+                return
+            if self.demo_step_index not in self.demo_completed:
+                self.run_demo_step_action(from_autoplay=True)
+                self.demo_autoplay_job = self.root.after(2200, close_and_advance)
+            else:
+                self.demo_autoplay_job = self.root.after(1500, advance_phase)
+
+        def close_and_advance():
+            if not (self.demo_active and self.demo_autoplay):
+                return
+            if self.modal is not None:
+                self.close_modal()
+                self.demo_autoplay_job = self.root.after(700, advance_phase)
+            else:
+                self.demo_autoplay_job = self.root.after(600, advance_phase)
+
+        def advance_phase():
+            if not (self.demo_active and self.demo_autoplay):
+                return
+            if self.demo_step_index >= len(DEMO_STEPS) - 1:
+                self.stop_demo_autoplay()
+                self.render_demo_bar()
+                self.toast("Auto-play reached the final step — click Finish Demo to wrap up.")
+            else:
+                self.go_to_demo_step(self.demo_step_index + 1, from_autoplay=True)
+                self._schedule_demo_autoplay()
+
+        self.demo_autoplay_job = self.root.after(1600, run_phase)
+
+    def run_demo_step_action(self, from_autoplay=False):
+        if not self.demo_active:
+            return
+        if not from_autoplay and self.demo_autoplay:
+            self.stop_demo_autoplay()
+
+        idx = self.demo_step_index
+        done = idx in self.demo_completed
+
+        if idx == 0:
+            # Dashboard: open the largest file's detail modal
+            largest = database.get_largest_files(1)
+            if largest:
+                item = largest[0]
+                self.show_details(item["id"])
+                self.demo_completed.add(0)
+                self.demo_last_note = f"Opened details for {item['name']} ({fmt_size(item['size_bytes'])})"
+        elif idx == 1:
+            # All Files: filter to Images + switch to Grid view (or reset back to All List)
+            if not done:
+                self.reset_filter_state()
+                self.category_select.set("Images")
+                if PIL_OK:
+                    self.view_mode = "grid"
+                    self.update_view_buttons()
+                self.render_results()
+                self.demo_completed.add(1)
+                self.demo_last_note = ("Filtered to Images category in thumbnail Grid view"
+                                       if PIL_OK else "Filtered to Images category")
+            else:
+                self.view_mode = "list"
+                self.update_view_buttons()
+                self.clear_filters()
+                self.demo_completed.discard(1)
+                self.demo_last_note = "Reset filters back to full List view"
+        elif idx == 2:
+            # Duplicates: quarantine 1 extra duplicate copy live (or restore demo duplicates)
+            groups = database.get_duplicate_groups()
+            if not done and groups and len(groups[0]) > 1:
+                copy_item = groups[0][1]
+                saved = fmt_size(copy_item["size_bytes"])
+                self.quarantine_copy(copy_item)
+                self.demo_completed.add(2)
+                self.demo_last_note = f"Quarantined {copy_item['name']} ({saved} reclaimed safely)"
+            else:
+                self.load_demo(show_toast=False)
+                self.show_page("duplicates")
+                self.demo_completed.discard(2)
+                self.demo_last_note = "Restored sample duplicate groups for inspection"
+        elif idx == 3:
+            # Charts: inspect a sample image file's details
+            all_files = database.get_all_files()
+            img = next((f for f in all_files if f["category"] == "Image"),
+                       all_files[0] if all_files else None)
+            if img:
+                self.show_details(img["id"])
+                self.demo_completed.add(3)
+                self.demo_last_note = f"Inspecting metadata & preview for {img['name']}"
+        elif idx == 4:
+            # Organize: switch dry-run strategy between By Year & Month and By Category
+            if hasattr(self, "org_strategy_select"):
+                if not done:
+                    self.org_strategy_select.set("By Year & Month (EXIF Capture / Modified Date)")
+                    if callable(self._org_show_dry_run):
+                        self._org_show_dry_run()
+                    self.demo_completed.add(4)
+                    self.demo_last_note = "Updated dry-run preview to Year & Month folders"
+                else:
+                    self.org_strategy_select.set("By Category (Images, Documents, Audio…)")
+                    if callable(self._org_show_dry_run):
+                        self._org_show_dry_run()
+                    self.demo_completed.discard(4)
+                    self.demo_last_note = "Switched dry-run preview back to By Category"
+        elif idx == 5:
+            # Export: execute live SHA-256 integrity verification on screen
+            if callable(self._export_run_integrity):
+                self._export_run_integrity()
+                self.demo_completed.add(5)
+                self.demo_last_note = "Verified SHA-256 integrity across the demo inventory"
+
+        self.render_demo_bar()
+
+    def render_demo_bar(self):
+        clear(self.demo_bar_slot)
+        if not self.demo_active:
+            return
+
+        step = DEMO_STEPS[self.demo_step_index]
+        total = len(DEMO_STEPS)
+        is_first = self.demo_step_index == 0
+        is_last = self.demo_step_index == total - 1
+        is_done = self.demo_step_index in self.demo_completed
+
+        hline(self.demo_bar_slot, BORDER)
+        pad = tk.Frame(self.demo_bar_slot, bg=BG)
+        pad.pack(fill="x", padx=S(32), pady=S(12))
+
+        card_outer = tk.Frame(pad, bg=ACCENT)
+        card_outer.pack(fill="x")
+        card = tk.Frame(card_outer, bg=SURFACE)
+        card.pack(fill="x", padx=S(1), pady=S(1))
+
+        # Top progress strip
+        prog_track = tk.Frame(card, bg=BORDER_LIGHT, height=S(3))
+        prog_track.pack(fill="x")
+        prog_track.pack_propagate(False)
+        tk.Frame(prog_track, bg=ACCENT).place(
+            relx=0, rely=0, relwidth=(self.demo_step_index + 1) / float(total), relheight=1.0)
+
+        body = tk.Frame(card, bg=SURFACE)
+        body.pack(fill="x", padx=S(18), pady=S(12))
+
+        # Top row: DEMO X/6 badge, clickable step dots, Auto-Play & Close
+        top = tk.Frame(body, bg=SURFACE)
+        top.pack(fill="x")
+
+        badge = tk.Label(top, text=f"DEMO {self.demo_step_index + 1}/{total}",
+                         bg=ACCENT, fg=SURFACE, font=FN(10, "semibold"),
+                         padx=S(8), pady=S(3), bd=0)
+        badge.pack(side="left")
+
+        dots = tk.Frame(top, bg=SURFACE)
+        dots.pack(side="left", padx=(S(12), 0))
+        for i in range(total):
+            is_cur = i == self.demo_step_index
+            dot_w = S(22) if is_cur else S(8)
+            dot_col = ACCENT if is_cur else (TEXT_SEC if i in self.demo_completed else BORDER)
+            dot = tk.Frame(dots, bg=dot_col, width=dot_w, height=S(7), cursor="hand2")
+            dot.pack(side="left", padx=S(3))
+            dot.pack_propagate(False)
+            dot.bind("<Button-1>", lambda e, target=i: self.go_to_demo_step(target))
+
+        right_top = tk.Frame(top, bg=SURFACE)
+        right_top.pack(side="right")
+        auto_btn = Btn(right_top, "Pause Auto" if self.demo_autoplay else "Auto-Play",
+                       self.toggle_demo_autoplay,
+                       kind="primary" if self.demo_autoplay else "default",
+                       px=10, py=4, size=11)
+        auto_btn.pack(side="left", padx=(0, S(6)))
+        close_btn = tk.Label(right_top, text="✕", bg=SURFACE, fg=TEXT_MUTED,
+                             font=FN(13, "semibold"), padx=S(6), pady=S(2), cursor="hand2")
+        close_btn.pack(side="left")
+        close_btn.bind("<Button-1>", lambda e: self.exit_demo_walkthrough(restore_clean=False))
+
+        # Step title & description
+        lbl(body, step["title"], 14, "semibold", TEXT, SURFACE).pack(anchor="w", pady=(S(8), S(2)))
+        lbl(body, step["description"], 12, "regular", TEXT_SEC, SURFACE,
+            wraplength=S(820), justify="left").pack(anchor="w")
+
+        # Live feedback note after executing the step's interactive action
+        if self.demo_last_note:
+            note_outer = tk.Frame(body, bg=BORDER)
+            note_outer.pack(fill="x", pady=(S(8), 0))
+            note_inner = tk.Frame(note_outer, bg=ACCENT_SOFT)
+            note_inner.pack(fill="x", padx=S(1), pady=S(1))
+            lbl(note_inner, f"✓  {self.demo_last_note}", 11, "medium", TEXT, ACCENT_SOFT,
+                padx=S(10), pady=S(5)).pack(anchor="w")
+
+        # Bottom controls: Try It on the left, Back + Next/Finish on the right
+        actions = tk.Frame(body, bg=SURFACE)
+        actions.pack(fill="x", pady=(S(10), 0))
+
+        action_label = step["done_label"] if is_done else step["action_label"]
+        action_icon = "check-circle" if is_done else "bolt"
+        Btn(actions, action_label, self.run_demo_step_action, icon_name=action_icon,
+            px=14, py=6, size=12).pack(side="left")
+
+        nav_btns = tk.Frame(actions, bg=SURFACE)
+        nav_btns.pack(side="right")
+        back_btn = Btn(nav_btns, "← Back", self.prev_demo_step, px=12, py=6, size=12)
+        back_btn.pack(side="left", padx=(0, S(8)))
+        back_btn.set_enabled(not is_first)
+        Btn(nav_btns, "Finish Demo ✓" if is_last else "Next →", self.next_demo_step,
+            kind="primary", px=14, py=6, size=12).pack(side="left")
 
     # Welcome screen shown before any folder has been scanned
     def render_intro(self):
@@ -1317,8 +1686,8 @@ class App:
         buttons.pack(pady=(S(24), 0))
         Btn(buttons, "Choose Folder", self.choose_and_scan, icon_name="folder",
             kind="primary").pack(side="left", padx=S(6))
-        Btn(buttons, "Load Demo Data", self.load_demo, icon_name="bolt").pack(side="left",
-                                                                            padx=S(6))
+        Btn(buttons, "Start Guided Demo", self.start_demo_walkthrough, icon_name="bolt").pack(
+            side="left", padx=S(6))
 
     # Dashboard screen showing the 4 summary cards, category bars, and Top 10 largest files
     def page_header(self, page, title, right_text=""):
@@ -2341,6 +2710,7 @@ class App:
 
             self.toast(f"Integrity verified: {intact_n:,} intact, {mod_n:,} modified, {miss_n:,} missing")
 
+        self._export_run_integrity = run_integrity_check
         Btn(i_body, "Verify File Integrity Now", run_integrity_check, icon_name="check-circle",
             kind="primary").pack(anchor="w")
         integrity_result_box.pack(fill="x")
