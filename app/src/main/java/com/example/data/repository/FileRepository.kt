@@ -67,10 +67,10 @@ class FileRepository(private val context: Context) {
         loadDemoDataset()
     }
 
-    // Loads the 220 sample files and saves a scan record
+    // Loads the sample demo dataset and saves a scan record
     fun loadDemoDataset() {
         val demoFiles = create200FileDemoDataset()
-        _rootFolderName.value = "/FileOrganizer/test_data (220 files)"
+        _rootFolderName.value = "/FileOrganizer/test_data (${demoFiles.size} files)"
         _lastScanTime.value = getCurrentFormattedTime()
         _files.value = demoFiles
         recordSnapshot()

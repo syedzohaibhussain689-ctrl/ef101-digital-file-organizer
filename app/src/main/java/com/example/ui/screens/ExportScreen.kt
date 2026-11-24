@@ -28,9 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -46,12 +44,8 @@ import com.example.ui.theme.SURFACE
 import com.example.ui.theme.TEXT
 import com.example.ui.theme.TEXT_MUTED
 import com.example.ui.theme.TEXT_SEC
+import com.example.ui.viewmodel.ExportFormat
 import com.example.ui.viewmodel.FileOrganizerViewModel
-
-// We support two export formats: CSV for spreadsheet apps like Excel, and JSON for code tools
-enum class ExportFormat {
-    CSV, JSON
-}
 
 // ExportScreen creates a full report of all scanned files in CSV or JSON format,
 // so the user can copy it to their clipboard or share it to another app with one tap
@@ -62,7 +56,7 @@ fun ExportScreen(
 ) {
     val context = LocalContext.current
     val allFiles by viewModel.allFiles.collectAsState()
-    var selectedFormat by remember { mutableStateOf(ExportFormat.CSV) }
+    val selectedFormat by viewModel.exportFormat.collectAsState()
 
     // Whenever the user switches between CSV and JSON, build the new report text right away
     val exportText = remember(allFiles, selectedFormat) {
@@ -105,7 +99,7 @@ fun ExportScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = selectedFormat == ExportFormat.CSV,
-                            onClick = { selectedFormat = ExportFormat.CSV },
+                            onClick = { viewModel.setExportFormat(ExportFormat.CSV) },
                             label = { Text("CSV Format", fontSize = 12.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = ACCENT,
@@ -123,7 +117,7 @@ fun ExportScreen(
 
                         FilterChip(
                             selected = selectedFormat == ExportFormat.JSON,
-                            onClick = { selectedFormat = ExportFormat.JSON },
+                            onClick = { viewModel.setExportFormat(ExportFormat.JSON) },
                             label = { Text("JSON Format", fontSize = 12.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = ACCENT,
@@ -152,6 +146,7 @@ fun ExportScreen(
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 val clip = ClipData.newPlainText("FileOrganizer Export", exportText)
                                 clipboard.setPrimaryClip(clip)
+                                viewModel.showToast("Copied ${selectedFormat.name} report to clipboard.")
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = ACCENT,

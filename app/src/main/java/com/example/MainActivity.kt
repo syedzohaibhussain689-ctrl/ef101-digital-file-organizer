@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,11 +31,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
@@ -64,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.DemoWalkthroughPanel
 import com.example.ui.components.FileDetailDialog
 import com.example.ui.components.letterSpaced
 import com.example.ui.screens.ChartsScreen
@@ -116,6 +120,7 @@ fun MainAppShell(viewModel: FileOrganizerViewModel) {
     val toastMessage by viewModel.toastMessage.collectAsState()
     val rootFolder by viewModel.rootFolderName.collectAsState()
     val lastScanTime by viewModel.lastScanTime.collectAsState()
+    val demoState by viewModel.demoState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Opens the built in Android folder picker when the user taps the Scan button
@@ -253,12 +258,11 @@ fun MainAppShell(viewModel: FileOrganizerViewModel) {
                                 Text("Rescan", fontSize = 12.sp, color = TEXT)
                             }
 
-                            OutlinedButton(
-                                onClick = { viewModel.resetToDemoData() },
-                                shape = RoundedCornerShape(6.dp)
-                            ) {
-                                Text("Demo", fontSize = 12.sp, color = TEXT)
-                            }
+                            DemoTopBarButton(
+                                isDemoActive = demoState.isActive,
+                                onStartDemo = { viewModel.startDemoWalkthrough() },
+                                onExitDemo = { viewModel.exitDemoWalkthrough(restoreCleanDemo = false) }
+                            )
                         }
                     }
 
@@ -266,6 +270,26 @@ fun MainAppShell(viewModel: FileOrganizerViewModel) {
 
                     Box(modifier = Modifier.weight(1f).fillMaxWidth().background(SURFACE)) {
                         TabContent(activeTab, viewModel, onPickFolder = { folderPickerLauncher.launch(null) })
+
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(16.dp)
+                        )
+                    }
+
+                    AnimatedVisibility(visible = demoState.isActive) {
+                        DemoWalkthroughPanel(
+                            state = demoState,
+                            isCompact = false,
+                            onPrevious = { viewModel.previousDemoStep() },
+                            onNext = { viewModel.nextDemoStep() },
+                            onSelectStep = { viewModel.goToDemoStep(it) },
+                            onRunStepAction = { viewModel.runCurrentDemoStepAction() },
+                            onToggleAutoPlay = { viewModel.toggleDemoAutoPlay() },
+                            onExit = { viewModel.exitDemoWalkthrough(restoreCleanDemo = false) }
+                        )
                     }
                 }
             }
@@ -274,7 +298,6 @@ fun MainAppShell(viewModel: FileOrganizerViewModel) {
             Scaffold(
                 modifier = Modifier.fillMaxSize().testTag("main_scaffold"),
                 contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
-                snackbarHost = { SnackbarHost(snackbarHostState) },
                 topBar = {
                     Column(
                         modifier = Modifier
@@ -312,12 +335,11 @@ fun MainAppShell(viewModel: FileOrganizerViewModel) {
                                     Text("Scan", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = TEXT)
                                 }
 
-                                OutlinedButton(
-                                    onClick = { viewModel.resetToDemoData() },
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text("Demo", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = TEXT)
-                                }
+                                DemoTopBarButton(
+                                    isDemoActive = demoState.isActive,
+                                    onStartDemo = { viewModel.startDemoWalkthrough() },
+                                    onExitDemo = { viewModel.exitDemoWalkthrough(restoreCleanDemo = false) }
+                                )
                             }
                         }
                         HorizontalDivider(color = BORDER)
@@ -395,13 +417,39 @@ fun MainAppShell(viewModel: FileOrganizerViewModel) {
                     }
                 }
             ) { innerPadding ->
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                         .background(SURFACE)
                 ) {
-                    TabContent(activeTab, viewModel, onPickFolder = { folderPickerLauncher.launch(null) })
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        TabContent(activeTab, viewModel, onPickFolder = { folderPickerLauncher.launch(null) })
+
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(12.dp)
+                        )
+                    }
+
+                    AnimatedVisibility(visible = demoState.isActive) {
+                        DemoWalkthroughPanel(
+                            state = demoState,
+                            isCompact = true,
+                            onPrevious = { viewModel.previousDemoStep() },
+                            onNext = { viewModel.nextDemoStep() },
+                            onSelectStep = { viewModel.goToDemoStep(it) },
+                            onRunStepAction = { viewModel.runCurrentDemoStepAction() },
+                            onToggleAutoPlay = { viewModel.toggleDemoAutoPlay() },
+                            onExit = { viewModel.exitDemoWalkthrough(restoreCleanDemo = false) }
+                        )
+                    }
                 }
             }
         }
@@ -412,6 +460,60 @@ fun MainAppShell(viewModel: FileOrganizerViewModel) {
                 file = file,
                 onDismiss = { viewModel.dismissFileDetails() },
                 onDelete = { viewModel.deleteFile(file) }
+            )
+        }
+    }
+}
+
+// Top-bar Demo button that starts the Guided Demo Walkthrough or exits it when active
+@Composable
+private fun DemoTopBarButton(
+    isDemoActive: Boolean,
+    onStartDemo: () -> Unit,
+    onExitDemo: () -> Unit
+) {
+    if (isDemoActive) {
+        Button(
+            onClick = onExitDemo,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = ACCENT,
+                contentColor = androidx.compose.ui.graphics.Color.White
+            ),
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier.testTag("demo_button")
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = null,
+                tint = androidx.compose.ui.graphics.Color.White,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "Exit Demo",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = androidx.compose.ui.graphics.Color.White
+            )
+        }
+    } else {
+        OutlinedButton(
+            onClick = onStartDemo,
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier.testTag("demo_button")
+        ) {
+            Icon(
+                imageVector = Icons.Default.PlayArrow,
+                contentDescription = null,
+                tint = TEXT,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "Demo",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = TEXT
             )
         }
     }

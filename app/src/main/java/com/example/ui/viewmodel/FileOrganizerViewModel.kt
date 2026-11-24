@@ -13,7 +13,10 @@ import com.example.data.model.OrganizePreviewItem
 import com.example.data.model.OrganizeStrategy
 import com.example.data.model.SizeTierSummary
 import com.example.data.model.TimelineSummary
+import com.example.data.model.formatReadableSize
 import com.example.data.repository.FileRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +38,11 @@ enum class AppTab(val title: String, val iconName: String) {
 // These are the 4 ways a user can sort the list on the All Files screen
 enum class SortField {
     NAME, SIZE, DATE, EXTENSION
+}
+
+// We support two export formats: CSV for spreadsheet apps like Excel, and JSON for code tools
+enum class ExportFormat {
+    CSV, JSON
 }
 
 // This ViewModel is like the brain of the app that connects our screen UI to the FileRepository.
@@ -120,6 +128,16 @@ class FileOrganizerViewModel(application: Application) : AndroidViewModel(applic
     private val _organizePreview = MutableStateFlow<List<OrganizePreviewItem>>(emptyList())
     val organizePreview: StateFlow<List<OrganizePreviewItem>> = _organizePreview.asStateFlow()
 
+    // Tracks whether the Export screen is currently showing CSV or JSON
+    private val _exportFormat = MutableStateFlow(ExportFormat.CSV)
+    val exportFormat: StateFlow<ExportFormat> = _exportFormat.asStateFlow()
+
+    // Tracks the interactive 6-step Guided Demo Walkthrough
+    private val _demoState = MutableStateFlow(DemoWalkthroughState())
+    val demoState: StateFlow<DemoWalkthroughState> = _demoState.asStateFlow()
+
+    private var demoAutoPlayJob: Job? = null
+
     // This holds short popup messages that appear at the bottom of the screen
     private val _toastMessage = MutableStateFlow<String?>(null)
     val toastMessage: StateFlow<String?> = _toastMessage.asStateFlow()
@@ -127,7 +145,7 @@ class FileOrganizerViewModel(application: Application) : AndroidViewModel(applic
     init {
         // Right when the app starts, build the organize preview and look for duplicates in the demo files
         refreshOrganizePreview()
-        runDuplicateAnalysis()
+        runDuplicateAnalysis(showToast = false)
     }
 
     // Whenever any filter or sort option changes, combine automatically builds a fresh list of files
@@ -219,6 +237,21 @@ class FileOrganizerViewModel(application: Application) : AndroidViewModel(applic
 
     fun setActiveTab(tab: AppTab) {
         _activeTab.value = tab
+        if (_demoState.value.isActive) {
+            val matchingIndex = DemoSteps.indexForTab(tab)
+            if (matchingIndex != _demoState.value.currentStepIndex) {
+                stopDemoAutoPlay()
+                _selectedFileForDetails.value = null
+                _demoState.value = _demoState.value.copy(
+                    currentStepIndex = matchingIndex,
+                    lastActionNote = null
+                )
+            }
+        }
+    }
+
+    fun setExportFormat(format: ExportFormat) {
+        _exportFormat.value = format
     }
 
     fun setSearchQuery(query: String) {
@@ -295,25 +328,290 @@ class FileOrganizerViewModel(application: Application) : AndroidViewModel(applic
 
     // When the user picks a real folder from their phone, this scans it in the background
     fun scanFolderUri(uri: Uri) {
+        if (_demoState.value.isActive) {
+            stopDemoAutoPlay()
+            _demoState.value = DemoWalkthroughState(isActive = false)
+        }
         viewModelScope.launch {
             repository.scanFolderUri(uri)
             refreshOrganizePreview()
-            runDuplicateAnalysis()
+            runDuplicateAnalysis(showToast = false)
             _toastMessage.value = "Folder scanned successfully."
         }
     }
 
-    // Tapping the Demo button reloads our 220 sample files right away
+    // Reloads the fresh sample dataset cleanly without clobbering the confirmation toast
     fun resetToDemoData() {
+        restoreFreshDemoWorkspace()
+        val fileCount = repository.files.value.size
+        val folderCount = repository.getFolderCount()
+        _toastMessage.value = "Sample dataset restored: $fileCount files across $folderCount subfolders."
+    }
+
+    // Starts the interactive 6-step Guided Demo Walkthrough from a clean sample workspace
+    fun startDemoWalkthrough() {
+        stopDemoAutoPlay()
+        restoreFreshDemoWorkspace()
+        _activeTab.value = DemoSteps.all.first().tab
+        _demoState.value = DemoWalkthroughState(
+            isActive = true,
+            currentStepIndex = 0,
+            isAutoPlaying = false,
+            completedSteps = emptySet(),
+            lastActionNote = null
+        )
+    }
+
+    // Exits the Guided Demo Walkthrough, optionally restoring the clean sample dataset
+    fun exitDemoWalkthrough(restoreCleanDemo: Boolean = false) {
+        stopDemoAutoPlay()
+        _selectedFileForDetails.value = null
+        if (restoreCleanDemo) {
+            restoreFreshDemoWorkspace()
+        }
+        _demoState.value = DemoWalkthroughState(isActive = false)
+        _toastMessage.value = if (restoreCleanDemo) {
+            "Guided Demo finished — clean sample dataset restored."
+        } else {
+            "Exited Guided Demo."
+        }
+    }
+
+    // Navigates to a specific step in the Guided Demo Walkthrough and switches to its tab
+    fun goToDemoStep(index: Int, fromAutoPlay: Boolean = false) {
+        val clamped = index.coerceIn(0, DemoSteps.all.lastIndex)
+        if (!fromAutoPlay) {
+            stopDemoAutoPlay()
+        }
+        _selectedFileForDetails.value = null
+
+        val targetStep = DemoSteps.all[clamped]
+        _activeTab.value = targetStep.tab
+
+        // Prepare clean initial screen state for interactive demonstrations when entering a step
+        when (targetStep.tab) {
+            AppTab.FILES -> {
+                if (clamped !in _demoState.value.completedSteps) {
+                    clearAllFilters()
+                    _isGridView.value = false
+                }
+            }
+            AppTab.ORGANIZE -> {
+                if (clamped !in _demoState.value.completedSteps) {
+                    setOrganizeStrategy(OrganizeStrategy.BY_CATEGORY)
+                }
+            }
+            AppTab.EXPORT -> {
+                if (clamped !in _demoState.value.completedSteps) {
+                    _exportFormat.value = ExportFormat.CSV
+                }
+            }
+            else -> Unit
+        }
+
+        _demoState.value = _demoState.value.copy(
+            isActive = true,
+            currentStepIndex = clamped,
+            lastActionNote = null
+        )
+    }
+
+    // Advances to the next step, or finishes the walkthrough cleanly on the last step
+    fun nextDemoStep() {
+        val state = _demoState.value
+        if (!state.isActive) return
+        if (state.isLastStep) {
+            exitDemoWalkthrough(restoreCleanDemo = true)
+        } else {
+            goToDemoStep(state.currentStepIndex + 1)
+        }
+    }
+
+    // Moves back one step in the walkthrough
+    fun previousDemoStep() {
+        val state = _demoState.value
+        if (!state.isActive || state.isFirstStep) return
+        goToDemoStep(state.currentStepIndex - 1)
+    }
+
+    // Toggles hands-free auto-play mode that demonstrates each step and advances automatically
+    fun toggleDemoAutoPlay() {
+        val state = _demoState.value
+        if (!state.isActive) return
+        if (state.isAutoPlaying) {
+            stopDemoAutoPlay()
+            _toastMessage.value = "Auto-play paused."
+        } else {
+            _demoState.value = state.copy(isAutoPlaying = true)
+            demoAutoPlayJob?.cancel()
+            demoAutoPlayJob = viewModelScope.launch {
+                while (_demoState.value.isActive && _demoState.value.isAutoPlaying) {
+                    delay(1800L)
+                    val current = _demoState.value
+                    if (!current.isActive || !current.isAutoPlaying) break
+
+                    if (!current.isCurrentActionDone) {
+                        runCurrentDemoStepAction(fromAutoPlay = true)
+                        delay(2400L)
+                        if (_selectedFileForDetails.value != null) {
+                            _selectedFileForDetails.value = null
+                            delay(600L)
+                        }
+                    } else {
+                        delay(1800L)
+                    }
+
+                    val afterAction = _demoState.value
+                    if (!afterAction.isActive || !afterAction.isAutoPlaying) break
+
+                    if (afterAction.isLastStep) {
+                        _demoState.value = afterAction.copy(isAutoPlaying = false)
+                        _toastMessage.value = "Auto-play reached the final step — tap Finish to wrap up."
+                        break
+                    } else {
+                        goToDemoStep(afterAction.currentStepIndex + 1, fromAutoPlay = true)
+                    }
+                }
+            }
+        }
+    }
+
+    // Runs the live interactive feature demonstration for whichever walkthrough step is active
+    fun runCurrentDemoStepAction(fromAutoPlay: Boolean = false) {
+        val state = _demoState.value
+        if (!state.isActive) return
+        if (!fromAutoPlay && state.isAutoPlaying) {
+            stopDemoAutoPlay()
+        }
+
+        val stepIndex = state.currentStepIndex
+        val alreadyDone = state.isCurrentActionDone
+
+        when (stepIndex) {
+            0 -> {
+                // Dashboard: open the largest file's detail sheet
+                val largest = allFiles.value.maxByOrNull { it.sizeBytes }
+                if (largest != null) {
+                    showFileDetails(largest)
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps + stepIndex,
+                        lastActionNote = "Opened details for ${largest.name} (${largest.readableSize})"
+                    )
+                }
+            }
+            1 -> {
+                // All Files: filter to vacation photos & switch to Grid view (or toggle back)
+                if (!alreadyDone) {
+                    clearAllFilters()
+                    selectCategory(FileCategory.IMAGE)
+                    setSearchQuery("DSC")
+                    _isGridView.value = true
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps + stepIndex,
+                        lastActionNote = "Filtered to vacation photos matching \"DSC\" in Grid view"
+                    )
+                } else {
+                    clearAllFilters()
+                    _isGridView.value = false
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps - stepIndex,
+                        lastActionNote = "Reset filters back to full List view"
+                    )
+                }
+            }
+            2 -> {
+                // Duplicates: clean one duplicate group live (or restore sample duplicates)
+                val firstGroup = _duplicateGroups.value.firstOrNull()
+                if (!alreadyDone && firstGroup != null) {
+                    val saved = formatReadableSize(firstGroup.wastedBytes)
+                    val extraCopies = firstGroup.files.size - 1
+                    resolveGroup(firstGroup)
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps + stepIndex,
+                        lastActionNote = "Removed $extraCopies duplicate copies ($saved reclaimed)"
+                    )
+                } else {
+                    repository.loadDemoDataset()
+                    refreshOrganizePreview()
+                    runDuplicateAnalysis(showToast = false)
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps - stepIndex,
+                        lastActionNote = "Restored sample duplicate groups for inspection"
+                    )
+                }
+            }
+            3 -> {
+                // Charts: inspect a photo with full EXIF metadata & preview
+                val photo = allFiles.value.firstOrNull {
+                    it.category == FileCategory.IMAGE && it.imageMetadata != null && it.previewResId != null
+                } ?: allFiles.value.firstOrNull { it.category == FileCategory.IMAGE }
+                if (photo != null) {
+                    showFileDetails(photo)
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps + stepIndex,
+                        lastActionNote = "Showing camera EXIF metadata for ${photo.name}"
+                    )
+                }
+            }
+            4 -> {
+                // Organize: switch to By Date & apply reorganization (or switch preview to By Category)
+                if (!alreadyDone) {
+                    setOrganizeStrategy(OrganizeStrategy.BY_DATE)
+                    val count = _organizePreview.value.size
+                    applyOrganization()
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps + stepIndex,
+                        lastActionNote = "Applied By Date organization to $count files"
+                    )
+                } else {
+                    setOrganizeStrategy(OrganizeStrategy.BY_CATEGORY)
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps - stepIndex,
+                        lastActionNote = "Switched preview to By Category strategy"
+                    )
+                }
+            }
+            5 -> {
+                // Export: toggle live report preview between CSV and JSON
+                if (_exportFormat.value == ExportFormat.CSV) {
+                    _exportFormat.value = ExportFormat.JSON
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps + stepIndex,
+                        lastActionNote = "Switched live export preview to JSON format"
+                    )
+                } else {
+                    _exportFormat.value = ExportFormat.CSV
+                    _demoState.value = _demoState.value.copy(
+                        completedSteps = state.completedSteps - stepIndex,
+                        lastActionNote = "Switched live export preview to CSV format"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopDemoAutoPlay() {
+        demoAutoPlayJob?.cancel()
+        demoAutoPlayJob = null
+        if (_demoState.value.isAutoPlaying) {
+            _demoState.value = _demoState.value.copy(isAutoPlaying = false)
+        }
+    }
+
+    private fun restoreFreshDemoWorkspace() {
         repository.loadDemoDataset()
         clearAllFilters()
+        _isGridView.value = false
+        _isMoreFiltersOpen.value = false
+        _selectedFileForDetails.value = null
+        _organizeStrategy.value = OrganizeStrategy.BY_CATEGORY
+        _exportFormat.value = ExportFormat.CSV
         refreshOrganizePreview()
-        runDuplicateAnalysis()
-        _toastMessage.value = "Mandatory 220-file test dataset loaded across 11 subfolders."
+        runDuplicateAnalysis(showToast = false)
     }
 
     // Runs the two step check in the repository to find exact duplicate files
-    fun runDuplicateAnalysis() {
+    fun runDuplicateAnalysis(showToast: Boolean = true) {
         viewModelScope.launch {
             _isAnalyzingDuplicates.value = true
             val results = repository.detectDuplicates { prog, text ->
@@ -322,7 +620,9 @@ class FileOrganizerViewModel(application: Application) : AndroidViewModel(applic
             }
             _duplicateGroups.value = results
             _isAnalyzingDuplicates.value = false
-            _toastMessage.value = if (results.isNotEmpty()) "Identified ${results.size} duplicate groups." else "No duplicate files found."
+            if (showToast) {
+                _toastMessage.value = if (results.isNotEmpty()) "Identified ${results.size} duplicate groups." else "No duplicate files found."
+            }
         }
     }
 
@@ -380,8 +680,17 @@ class FileOrganizerViewModel(application: Application) : AndroidViewModel(applic
         _toastMessage.value = "Organized ${preview.size} files into structured folders."
     }
 
+    fun showToast(message: String) {
+        _toastMessage.value = message
+    }
+
     fun clearToast() {
         _toastMessage.value = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        demoAutoPlayJob?.cancel()
     }
 
     // Quick helper functions used by the Dashboard, Charts, and Export screens
