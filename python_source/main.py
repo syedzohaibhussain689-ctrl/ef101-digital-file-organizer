@@ -61,6 +61,11 @@ DANGER = "#9B2C2C"
 DANGER_SOFT = "#FEF2F2"
 SCROLL_THUMB = "#D4D4D2"
 SCROLL_THUMB_HOVER = "#B3B3B0"
+SPOT = "#4F46E5"          # Indigo spotlight ring that shows first-time users what to click next
+SPOT_SOFT = "#A5B4FC"     # Lighter pulse shade of the spotlight ring
+SPOT_BG = "#EEF2FF"       # Soft indigo tint behind the current demo mission
+SUCCESS = "#15803D"       # Green check marks for completed demo missions
+SUCCESS_SOFT = "#F0FDF4"
 
 # Different shades of grey for each file category so charts and badges are easy to tell apart
 CAT_COLORS = {
@@ -967,49 +972,112 @@ NAV = [
     ("export", "Export", "file-down"),
 ]
 
-# Interactive 6-step Guided Demo Walkthrough steps covering every screen in the app
+# Hands-on Guided Demo: each step is a short mission where the user clicks the REAL controls.
+# "event" is fired by the real UI handler, "target" is the widget the spotlight ring points at,
+# "after" means the mission only counts once another mission is done, and "prep" is the target
+# the "Show me" button opens first when the mission's own target is not on screen yet.
 DEMO_STEPS = [
     {
         "page": "dashboard",
-        "title": "Storage Dashboard Overview",
-        "description": "See total files, storage usage, recoverable duplicate space, category breakdown bars, and your 10 largest files in one view.",
-        "action_label": "Inspect Largest File",
-        "done_label": "Inspect Again",
+        "title": "Your Storage Dashboard",
+        "description": "Total files, storage used, recoverable duplicate space and your biggest files, all at a glance.",
+        "tasks": [
+            {"event": "details:dashboard", "target": "dash_largest",
+             "label": "Click any file in the “10 Largest Files” list",
+             "pill": "Click a file to inspect it",
+             "done": "Nice! That popup shows the full path, size, dates and SHA-256 fingerprint."},
+            {"event": "modal_closed", "target": "modal_close", "after": "details:dashboard",
+             "label": "Close the popup with × (or press Esc)",
+             "pill": "Close the popup",
+             "done": "Popup closed. You can open details like this from any file list."},
+        ],
     },
     {
         "page": "files",
-        "title": "Smart Search, Filters & Grid View",
-        "description": "Search names, paths, or extensions, filter by category, size, or date range, sort any column, and switch between List and thumbnail Grid view.",
-        "action_label": "Try Image Filter + Grid",
-        "done_label": "Reset to All List",
+        "title": "Search, Filter & Browse All Files",
+        "description": "Narrow hundreds of files down instantly. Tip: you can also type in the search box or click a column header to sort.",
+        "tasks": [
+            {"event": "files_category", "target": "files_category",
+             "label": "Pick a category (e.g. Images) from the category dropdown",
+             "pill": "Pick a category here",
+             "done": "Filtered! Only files from that category are listed now."},
+            {"event": "files_grid", "target": "files_grid",
+             "label": "Click the Grid button to switch to thumbnail view",
+             "pill": "Switch to Grid view",
+             "done": "Grid view on: every file gets a thumbnail or type tile."},
+            {"event": "details:files", "target": "files_card",
+             "label": "Click any file to open its details",
+             "pill": "Click any file",
+             "done": "That is how you inspect any file while browsing."},
+        ],
     },
     {
         "page": "duplicates",
-        "title": "Two-Step SHA-256 Duplicate Finder",
-        "description": "Identifies identical files even when renamed across folders by grouping exact byte sizes first, then verifying SHA-256 cryptographic hashes.",
-        "action_label": "Quarantine 1 Duplicate Copy",
-        "done_label": "Restore Demo Duplicates",
+        "title": "Find & Clean Up Duplicate Files",
+        "description": "Files are grouped by exact size first, then confirmed with SHA-256 hashes, so renamed copies are caught too.",
+        "tasks": [
+            {"event": "dup_expand", "target": "dup_group",
+             "label": "Click a duplicate group to expand it",
+             "pill": "Click to expand this group",
+             "done": "Expanded! KEEP is the original, every COPY is wasted space."},
+            {"event": "dup_quarantine", "target": "dup_quarantine", "prep": "dup_group",
+             "label": "Click “Quarantine Copy” to safely set one extra copy aside",
+             "pill": "Quarantine this copy",
+             "done": "Copy quarantined. It is moved aside, not deleted, so nothing is lost."},
+        ],
     },
     {
         "page": "charts",
-        "title": "Visual Storage Analytics",
-        "description": "Explore 4 live visual summaries: Storage by Category, File-Size Distribution (Small to Huge), Top Extensions, and Activity Timeline.",
-        "action_label": "Inspect Sample Image",
-        "done_label": "Inspect Image Again",
+        "title": "Explore Interactive Storage Charts",
+        "description": "Category bars are clickable. Drill into one to see which files take up the most space.",
+        "tasks": [
+            {"event": "charts_category", "target": "charts_cat",
+             "label": "Click a category bar in “Storage Breakdown by Category”",
+             "pill": "Click a category bar",
+             "done": "Drill-down open: these are the biggest files in that category."},
+            {"event": "details:charts", "target": "charts_file", "prep": "charts_cat",
+             "label": "Click one of the files in the drill-down",
+             "pill": "Click a file",
+             "done": "You can jump from a chart straight to any file's details."},
+        ],
     },
     {
         "page": "organize",
-        "title": "Safe Dry-Run Folder Organization",
-        "description": "Choose By Category, By Year & Month, EXIF Photo Date, or By Extension and review the exact dry-run preview before moving any files.",
-        "action_label": "Preview By Year & Month",
-        "done_label": "Preview By Category",
+        "title": "Organize Folders Safely",
+        "description": "Pick a rule, check the dry-run preview, then organize. Demo files are only simulated, so nothing on disk changes.",
+        "tasks": [
+            {"event": "org_strategy", "target": "org_strategy",
+             "label": "Choose a different rule in the strategy dropdown",
+             "pill": "Pick an organization rule",
+             "done": "The dry-run preview below updated live for the new rule."},
+            {"event": "org_run", "target": "org_run",
+             "label": "Click “Organize Files Now” (Safe Copy mode)",
+             "pill": "Run it",
+             "done": "Organized! Safe Copy keeps the original files untouched."},
+            {"event": "org_undo", "target": "org_undo", "after": "org_run",
+             "label": "Click “Undo Last Run” to reverse it",
+             "pill": "Undo it",
+             "done": "Undone. Every organize run can be reversed with one click."},
+        ],
     },
     {
         "page": "export",
-        "title": "Export, Backup & SHA-256 Verification",
-        "description": "Export complete inventories to CSV or JSON, create ZIP backups, compare scan snapshots, and run live SHA-256 file integrity checks.",
-        "action_label": "Run SHA-256 Integrity Check",
-        "done_label": "Run Integrity Check Again",
+        "title": "Export, Verify & Track Changes",
+        "description": "Export reports, verify files with SHA-256 and compare snapshots to see what changed between scans.",
+        "tasks": [
+            {"event": "export_verify", "target": "export_verify",
+             "label": "Click “Verify File Integrity Now”",
+             "pill": "Run the SHA-256 check",
+             "done": "Verified! Every file's hash was checked for corruption or changes."},
+            {"event": "export_snapshot", "target": "export_snapshot",
+             "label": "Click “Save Current Snapshot”",
+             "pill": "Save a snapshot",
+             "done": "Snapshot saved. It records the inventory exactly as it is right now."},
+            {"event": "export_compare", "target": "export_compare",
+             "label": "Click “Compare Two Snapshots” to see what changed",
+             "pill": "Compare snapshots",
+             "done": "There is the diff: added, removed and modified files between two scans."},
+        ],
     },
 ]
 
@@ -1056,13 +1124,19 @@ class App:
         self.pages = {}
         self.nav_items = {}
 
-        # State for the interactive 6-step Guided Demo Walkthrough
+        # State for the hands-on 6-step Guided Demo (the user clicks the real controls)
         self.demo_active = False
         self.demo_step_index = 0
-        self.demo_autoplay = False
-        self.demo_autoplay_job = None
-        self.demo_completed = set()
+        self.demo_completed = set()        # Steps whose missions are all done
+        self.demo_done_tasks = {}          # step index -> set of completed mission events
         self.demo_last_note = None
+        self.demo_targets = {}             # target key -> (widget, action) for the spotlight
+        self.modal_kind = None
+        self._spot_job = None
+        self._spot_phase = 0
+        self._spot_ident = None
+        self._spot_geom = None
+        self._spot_pill_mode = "target"
         self._org_show_dry_run = None
         self._export_run_integrity = None
 
@@ -1086,7 +1160,12 @@ class App:
         root.bind_all("<MouseWheel>", self.scroll.on_wheel)
         root.bind_all("<Button-4>", self.scroll.on_wheel)
         root.bind_all("<Button-5>", self.scroll.on_wheel)
-        root.bind("<Escape>", lambda e: self.close_modal())
+        # Pulsing indigo spotlight ring + hint pill used by the hands-on Guided Demo
+        self._spot_edges = [tk.Frame(root, bg=SPOT, bd=0, highlightthickness=0) for _ in range(4)]
+        self._spot_pill = tk.Label(root, bg=SPOT, fg="#FFFFFF", font=FN(12, "semibold"),
+                                   padx=S(10), pady=S(4), bd=0, cursor="hand2")
+        self._spot_pill.bind("<Button-1>", self._demo_pill_clicked)
+        root.bind("<Escape>", lambda e: self.close_modal(user=True))
         root.bind("<Button-1>", self.maybe_close_modal, add="+")
 
         self.reload_state()
@@ -1112,6 +1191,7 @@ class App:
             item = NavItem(nav, text, icon_name, lambda k=key: self.navigate(k))
             item.pack(fill="x", padx=S(10), pady=(0, S(2)))
             self.nav_items[key] = item
+            self.demo_target("nav:" + key, item, lambda k=key: self.navigate(k))
 
         bottom = tk.Frame(sidebar, bg=BG)
         bottom.pack(side="bottom", fill="x", padx=S(20), pady=S(20))
@@ -1148,6 +1228,7 @@ class App:
     def build_statusbar(self, main):
         wrap = tk.Frame(main, bg=BG)
         wrap.pack(side="bottom", fill="x")
+        self.statusbar_wrap = wrap
         hline(wrap, BORDER)
         row = tk.Frame(wrap, bg=BG)
         row.pack(fill="x", padx=S(32), pady=S(10))
@@ -1173,7 +1254,11 @@ class App:
     # Helper functions for popup toast messages, switching screens, and refreshing numbers
     def toast(self, message):
         self.toast_label.configure(text=message)
-        y_offset = -S(215) if self.demo_active else -S(40)
+        y_offset = -S(40)
+        if self.demo_active:
+            bar_h = self.demo_bar_slot.winfo_height()
+            status_h = self.statusbar_wrap.winfo_height()
+            y_offset = -(bar_h + status_h + S(14)) if bar_h > 1 else -S(245)
         self.toast_label.place(relx=0.5, rely=1.0, y=y_offset, anchor="s")
         self.toast_label.lift()
         if self.toast_job:
@@ -1188,9 +1273,8 @@ class App:
             for idx, step in enumerate(DEMO_STEPS):
                 if step["page"] == page:
                     if idx != self.demo_step_index:
-                        self.stop_demo_autoplay()
-                        self.demo_step_index = idx
-                        self.demo_last_note = None
+                        self.go_to_demo_step(idx)       # Clicking a sidebar tab moves the tour too
+                        return
                     break
         self.show_page(page)
         if self.demo_active:
@@ -1432,7 +1516,8 @@ class App:
         if show_toast:
             self.toast(f"Demo loaded: {len(rows)} files across {len(folders) + 1} folders")
 
-    # Guided Demo Walkthrough controls and live step demonstrations
+    # Hands-on Guided Demo: a pulsing spotlight shows what to click and the real UI handlers
+    # report back through demo_event() so each mission is ticked off as the user does it.
     def toggle_demo_walkthrough(self):
         if self.demo_active:
             self.exit_demo_walkthrough(restore_clean=False)
@@ -1440,25 +1525,30 @@ class App:
             self.start_demo_walkthrough()
 
     def start_demo_walkthrough(self):
-        self.stop_demo_autoplay()
         self.view_mode = "list"
+        if self.filters_built:
+            self.update_view_buttons()
         self.load_demo(show_toast=False)
         self.demo_active = True
         self.demo_step_index = 0
         self.demo_completed = set()
+        self.demo_done_tasks = {}
         self.demo_last_note = None
         self.demo_btn.set_text("Exit Demo")
         self.demo_btn.set_kind("primary")
         self.demo_bar_slot.pack(side="bottom", fill="x", before=self.scroll)
         self.show_page(DEMO_STEPS[0]["page"])
         self.render_demo_bar()
+        self._demo_start_spotlight()
+        self.show_demo_welcome()
 
     def exit_demo_walkthrough(self, restore_clean=False, silent=False):
-        self.stop_demo_autoplay()
+        self._demo_stop_spotlight()
         self.close_modal()
         self.demo_active = False
         self.demo_step_index = 0
         self.demo_completed = set()
+        self.demo_done_tasks = {}
         self.demo_last_note = None
         self.demo_bar_slot.pack_forget()
         clear(self.demo_bar_slot)
@@ -1466,39 +1556,40 @@ class App:
         self.demo_btn.set_kind("default")
         if restore_clean:
             self.view_mode = "list"
+            if self.filters_built:
+                self.update_view_buttons()
             self.load_demo(show_toast=False)
         if not silent:
-            self.toast("Guided Demo finished — clean sample dataset restored."
+            self.toast("Guided Demo finished, clean sample dataset restored."
                        if restore_clean else "Exited Guided Demo.")
 
-    def stop_demo_autoplay(self):
-        if self.demo_autoplay_job:
-            try:
-                self.root.after_cancel(self.demo_autoplay_job)
-            except Exception:
-                pass
-            self.demo_autoplay_job = None
-        self.demo_autoplay = False
+    def finish_demo_walkthrough(self):
+        total = sum(len(s["tasks"]) for s in DEMO_STEPS)
+        done = sum(len(v) for v in self.demo_done_tasks.values())
+        steps_done = set(self.demo_completed)
+        self.exit_demo_walkthrough(restore_clean=True, silent=True)
+        self.show_demo_finish(done, total, steps_done)
 
-    def go_to_demo_step(self, idx, from_autoplay=False):
+    def go_to_demo_step(self, idx):
         clamped = max(0, min(len(DEMO_STEPS) - 1, idx))
-        if not from_autoplay:
-            self.stop_demo_autoplay()
         self.close_modal()
         self.demo_step_index = clamped
         self.demo_last_note = None
         page = DEMO_STEPS[clamped]["page"]
         if page == "files" and clamped not in self.demo_completed:
-            self.view_mode = "list"
+            self.view_mode = "list"               # Start the All Files mission from a clean list
             self.reset_filter_state()
+            if self.filters_built:
+                self.update_view_buttons()
         self.show_page(page)
         self.render_demo_bar()
+        self._demo_spot_now()
 
     def next_demo_step(self):
         if not self.demo_active:
             return
         if self.demo_step_index >= len(DEMO_STEPS) - 1:
-            self.exit_demo_walkthrough(restore_clean=True)
+            self.finish_demo_walkthrough()
         else:
             self.go_to_demo_step(self.demo_step_index + 1)
 
@@ -1506,227 +1597,436 @@ class App:
         if self.demo_active and self.demo_step_index > 0:
             self.go_to_demo_step(self.demo_step_index - 1)
 
-    def toggle_demo_autoplay(self):
+    def demo_target(self, key, widget, action=None):
+        """Registers a real widget the spotlight can point at, plus what "Show me" should do."""
+        self.demo_targets[key] = (widget, action)
+
+    def _demo_done(self, idx=None):
+        idx = self.demo_step_index if idx is None else idx
+        return self.demo_done_tasks.setdefault(idx, set())
+
+    def _demo_current_task(self):
+        if not self.demo_active:
+            return None
+        done = self._demo_done()
+        for task in DEMO_STEPS[self.demo_step_index]["tasks"]:
+            if task["event"] not in done:
+                return task
+        return None
+
+    def demo_event(self, event, force=False):
+        """Called by the real UI handlers so the tour can tick off missions the user performs."""
         if not self.demo_active:
             return
-        if self.demo_autoplay:
-            self.stop_demo_autoplay()
-            self.render_demo_bar()
-            self.toast("Auto-play paused.")
-            return
-        self.demo_autoplay = True
-        self.render_demo_bar()
-        self._schedule_demo_autoplay()
-
-    def _schedule_demo_autoplay(self):
-        if not (self.demo_active and self.demo_autoplay):
-            return
-
-        def run_phase():
-            if not (self.demo_active and self.demo_autoplay):
-                return
-            if self.demo_step_index not in self.demo_completed:
-                self.run_demo_step_action(from_autoplay=True)
-                self.demo_autoplay_job = self.root.after(2200, close_and_advance)
-            else:
-                self.demo_autoplay_job = self.root.after(1500, advance_phase)
-
-        def close_and_advance():
-            if not (self.demo_active and self.demo_autoplay):
-                return
-            if self.modal is not None:
-                self.close_modal()
-                self.demo_autoplay_job = self.root.after(700, advance_phase)
-            else:
-                self.demo_autoplay_job = self.root.after(600, advance_phase)
-
-        def advance_phase():
-            if not (self.demo_active and self.demo_autoplay):
-                return
-            if self.demo_step_index >= len(DEMO_STEPS) - 1:
-                self.stop_demo_autoplay()
-                self.render_demo_bar()
-                self.toast("Auto-play reached the final step — click Finish Demo to wrap up.")
-            else:
-                self.go_to_demo_step(self.demo_step_index + 1, from_autoplay=True)
-                self._schedule_demo_autoplay()
-
-        self.demo_autoplay_job = self.root.after(1600, run_phase)
-
-    def run_demo_step_action(self, from_autoplay=False):
-        if not self.demo_active:
-            return
-        if not from_autoplay and self.demo_autoplay:
-            self.stop_demo_autoplay()
-
         idx = self.demo_step_index
-        done = idx in self.demo_completed
+        done = self._demo_done(idx)
+        tasks = DEMO_STEPS[idx]["tasks"]
+        for task in tasks:
+            if task["event"] != event or event in done:
+                continue
+            if not force and task.get("after") and task["after"] not in done:
+                return
+            done.add(event)
+            self.demo_last_note = task["done"]
+            if all(t["event"] in done for t in tasks):
+                self.demo_completed.add(idx)
+            self.render_demo_bar()
+            self._demo_spot_now()
+            return
 
-        if idx == 0:
-            # Dashboard: open the largest file's detail modal
-            largest = database.get_largest_files(1)
-            if largest:
-                item = largest[0]
-                self.show_details(item["id"])
-                self.demo_completed.add(0)
-                self.demo_last_note = f"Opened details for {item['name']} ({fmt_size(item['size_bytes'])})"
-        elif idx == 1:
-            # All Files: filter to Images + switch to Grid view (or reset back to All List)
-            if not done:
-                self.reset_filter_state()
-                self.category_select.set("Images")
-                if PIL_OK:
-                    self.view_mode = "grid"
-                    self.update_view_buttons()
-                self.render_results()
-                self.demo_completed.add(1)
-                self.demo_last_note = ("Filtered to Images category in thumbnail Grid view"
-                                       if PIL_OK else "Filtered to Images category")
-            else:
-                self.view_mode = "list"
-                self.update_view_buttons()
-                self.clear_filters()
-                self.demo_completed.discard(1)
-                self.demo_last_note = "Reset filters back to full List view"
-        elif idx == 2:
-            # Duplicates: quarantine 1 extra duplicate copy live (or restore demo duplicates)
-            groups = database.get_duplicate_groups()
-            if not done and groups and len(groups[0]) > 1:
-                copy_item = groups[0][1]
-                saved = fmt_size(copy_item["size_bytes"])
-                self.quarantine_copy(copy_item)
-                self.demo_completed.add(2)
-                self.demo_last_note = f"Quarantined {copy_item['name']} ({saved} reclaimed safely)"
-            else:
-                self.load_demo(show_toast=False)
-                self.show_page("duplicates")
-                self.demo_completed.discard(2)
-                self.demo_last_note = "Restored sample duplicate groups for inspection"
-        elif idx == 3:
-            # Charts: inspect a sample image file's details
-            all_files = database.get_all_files()
-            img = next((f for f in all_files if f["category"] == "Image"),
-                       all_files[0] if all_files else None)
-            if img:
-                self.show_details(img["id"])
-                self.demo_completed.add(3)
-                self.demo_last_note = f"Inspecting metadata & preview for {img['name']}"
-        elif idx == 4:
-            # Organize: switch dry-run strategy between By Year & Month and By Category
-            if hasattr(self, "org_strategy_select"):
-                if not done:
-                    self.org_strategy_select.set("By Year & Month (EXIF Capture / Modified Date)")
-                    if callable(self._org_show_dry_run):
-                        self._org_show_dry_run()
-                    self.demo_completed.add(4)
-                    self.demo_last_note = "Updated dry-run preview to Year & Month folders"
-                else:
-                    self.org_strategy_select.set("By Category (Images, Documents, Audio…)")
-                    if callable(self._org_show_dry_run):
-                        self._org_show_dry_run()
-                    self.demo_completed.discard(4)
-                    self.demo_last_note = "Switched dry-run preview back to By Category"
-        elif idx == 5:
-            # Export: execute live SHA-256 integrity verification on screen
-            if callable(self._export_run_integrity):
-                self._export_run_integrity()
-                self.demo_completed.add(5)
-                self.demo_last_note = "Verified SHA-256 integrity across the demo inventory"
+    def _demo_entry(self, key):
+        entry = self.demo_targets.get(key) if key else None
+        if not entry:
+            return None
+        try:
+            if not entry[0].winfo_exists() or not entry[0].winfo_viewable():
+                return None
+        except tk.TclError:
+            return None
+        return entry
 
-        self.render_demo_bar()
+    def demo_show_me(self):
+        """Fallback for anyone who gets stuck: performs the highlighted action for them."""
+        if not self.demo_active:
+            return
+        task = self._demo_current_task()
+        if task is None:
+            self.next_demo_step()
+            return
+        if self.modal is not None and task["target"] != "modal_close":
+            self.close_modal()
+        entry = self._demo_entry(task["target"])
+        if entry is None and task.get("prep"):
+            prep = self._demo_entry(task["prep"])
+            if prep and prep[1]:
+                prep[1]()
+                self.root.update_idletasks()
+                entry = self._demo_entry(task["target"])
+        if entry and entry[1]:
+            entry[1]()
+        if self.demo_active and task["event"] not in self._demo_done():
+            self.demo_event(task["event"], force=True)     # Never leave the user stuck
+
+    def _demo_spot_target(self):
+        """Returns (target key, hint text, pill side) for whatever the user should click next."""
+        task = self._demo_current_task()
+        if task is not None:
+            return task["target"], task["pill"], "auto"
+        if self.modal is not None and self.modal_kind == "details":
+            return "modal_close", "Close to continue", "auto"
+        if self.demo_step_index >= len(DEMO_STEPS) - 1:
+            return "demo_next", "Finish the tour", "auto"
+        nxt = DEMO_STEPS[self.demo_step_index + 1]["page"]
+        label = next(text for key, text, _ in NAV if key == nxt)
+        return "nav:" + nxt, f"Next: click {label}", "right"
+
+    @staticmethod
+    def _is_inside(widget, ancestor):
+        while widget is not None:
+            if widget is ancestor:
+                return True
+            widget = getattr(widget, "master", None)
+        return False
+
+    def _demo_start_spotlight(self):
+        self._demo_stop_spotlight()
+        self._spot_job = self.root.after(120, self._demo_spot_tick)
+
+    def _demo_stop_spotlight(self):
+        if self._spot_job:
+            try:
+                self.root.after_cancel(self._spot_job)
+            except Exception:
+                pass
+            self._spot_job = None
+        self._demo_hide_spot()
+        self._spot_ident = None
+
+    def _demo_hide_spot(self):
+        for edge in self._spot_edges:
+            edge.place_forget()
+        self._spot_pill.place_forget()
+        self._spot_geom = None
+
+    def _demo_spot_tick(self):
+        self._spot_job = None
+        if not self.demo_active:
+            self._demo_hide_spot()
+            return
+        self._spot_phase = (self._spot_phase + 1) % 14
+        self._demo_place_spot()
+        self._spot_job = self.root.after(90, self._demo_spot_tick)
+
+    def _demo_spot_now(self):
+        self._spot_geom = None
+        self._spot_ident = None            # Treat as a new target so it scrolls into view
+        self.root.after_idle(self._demo_place_spot)
+
+    def _demo_scroll_into_view(self, widget):
+        try:
+            self.root.update_idletasks()
+            self.scroll._fit()             # Ensure scrollregion includes newly expanded cards
+            self.root.update_idletasks()
+            inner, canvas = self.scroll.inner, self.scroll.canvas
+            y = widget.winfo_rooty() - inner.winfo_rooty()
+            total = max(1, inner.winfo_height())
+            view = canvas.winfo_height()
+            if total <= view:
+                return
+            top = max(0, min(y - int(view * 0.42), total - view))
+            canvas.yview_moveto(top / float(total))
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
+
+    def _demo_lift_spot(self):
+        for edge in self._spot_edges:
+            edge.lift()
+        self._spot_pill.lift()
+
+    def _demo_place_spot(self):
+        """Draws the pulsing ring around the real widget the user should click next."""
+        if not self.demo_active:
+            self._demo_hide_spot()
+            return
+        key, text, side = self._demo_spot_target()
+        entry = self._demo_entry(key)
+        if entry is None or (self.modal is not None and not self._is_inside(entry[0], self.modal)):
+            self._demo_hide_spot()
+            return
+        widget, root = entry[0], self.root
+        try:
+            ox, oy = root.winfo_rootx(), root.winfo_rooty()
+            x0, y0 = widget.winfo_rootx() - ox, widget.winfo_rooty() - oy
+            ww, wh = widget.winfo_width(), widget.winfo_height()
+        except tk.TclError:
+            self._demo_hide_spot()
+            return
+        if ww <= 1 or wh <= 1:
+            self._demo_hide_spot()
+            return
+        ident = (key, str(widget))
+        new_target = ident != self._spot_ident
+        self._spot_ident = ident
+
+        pad, t = S(4), S(3)
+        x0, y0 = x0 - pad, y0 - pad
+        x1, y1 = x0 + ww + 2 * pad, y0 + wh + 2 * pad
+        top_limit = 0
+        if self._is_inside(widget, self.scroll.inner):
+            c = self.scroll.canvas
+            cx0, cy0 = c.winfo_rootx() - ox, c.winfo_rooty() - oy
+            cx1, cy1 = cx0 + c.winfo_width(), cy0 + c.winfo_height()
+            if new_target and (y0 < cy0 or y1 > cy1):
+                self._demo_scroll_into_view(widget)
+                self._spot_geom = None
+                return                                  # The next tick draws it at its new spot
+            if y1 <= cy0 + S(6) or y0 >= cy1 - S(6):
+                self._demo_show_scroll_hint(y1 <= cy0 + S(6), cx0, cy0, cx1, cy1)
+                return
+            x0, y0, x1, y1 = max(x0, cx0), max(y0, cy0), min(x1, cx1), min(y1, cy1)
+            top_limit = cy0
+
+        color = SPOT if self._spot_phase < 7 else SPOT_SOFT
+        geom = (x0, y0, x1, y1, color, text)
+        if geom == self._spot_geom:
+            self._demo_lift_spot()
+            return
+        self._spot_geom = geom
+        bw, bh = x1 - x0, y1 - y0
+        boxes = ((x0, y0, bw, t), (x0, y1 - t, bw, t), (x0, y0, t, bh), (x1 - t, y0, t, bh))
+        for edge, (fx, fy, fw, fh) in zip(self._spot_edges, boxes):
+            edge.configure(bg=color)
+            edge.place(x=fx, y=fy, width=max(1, fw), height=max(1, fh))
+
+        self._spot_pill_mode = "target"
+        ph = self._spot_pill.winfo_reqheight()
+        if side == "right":
+            self._spot_pill.configure(text=f"◀  {text}")
+            px, py = x1 + S(8), y0 + (bh - ph) // 2
+        elif y0 - ph - S(6) >= top_limit:
+            self._spot_pill.configure(text=f"▼  {text}")
+            px, py = x0, y0 - ph - S(6)
+        else:
+            self._spot_pill.configure(text=f"▲  {text}")
+            px, py = x0, y1 + S(6)
+        pw = self._spot_pill.winfo_reqwidth()
+        if side != "right" and px + pw > root.winfo_width() - S(12):
+            px = x1 - pw
+        px = max(S(4), min(px, root.winfo_width() - pw - S(8)))
+        py = max(S(4), min(py, root.winfo_height() - ph - S(4)))
+        self._spot_pill.place(x=px, y=py)
+        self._demo_lift_spot()
+
+    def _demo_show_scroll_hint(self, above, cx0, cy0, cx1, cy1):
+        for edge in self._spot_edges:
+            edge.place_forget()
+        self._spot_geom = None
+        self._spot_pill_mode = "scroll"
+        self._spot_pill.configure(text="▲  Scroll up to the highlighted item" if above
+                                  else "▼  Scroll down to the highlighted item")
+        pw, ph = self._spot_pill.winfo_reqwidth(), self._spot_pill.winfo_reqheight()
+        px = cx0 + (cx1 - cx0 - pw) // 2
+        py = cy0 + S(10) if above else cy1 - ph - S(10)
+        self._spot_pill.place(x=px, y=py)
+        self._spot_pill.lift()
+
+    def _demo_pill_clicked(self, event=None):
+        if self._spot_pill_mode == "scroll":
+            entry = self._demo_entry(self._demo_spot_target()[0])
+            if entry:
+                self._demo_scroll_into_view(entry[0])
+                self._spot_geom = None
+        else:
+            self.demo_show_me()
+        return "break"
+
+    # Welcome and finish cards shown at the start and end of the hands-on tour
+    def _show_info_modal(self, kind, title, subtitle, items, buttons, width=540):
+        self.close_modal()
+        self.toast_label.place_forget()
+        modal = tk.Frame(self.root, bg=SPOT)
+        inner = tk.Frame(modal, bg=SURFACE)
+        inner.pack(fill="both", expand=True, padx=S(2), pady=S(2))
+        body = tk.Frame(inner, bg=SURFACE)
+        body.pack(fill="both", expand=True, padx=S(32), pady=S(28))
+        lbl(body, title, 22, "semibold", TEXT, SURFACE).pack(anchor="w")
+        lbl(body, subtitle, 13, "regular", TEXT_SEC, SURFACE, wraplength=S(width - 72),
+            justify="left").pack(anchor="w", pady=(S(8), S(16)))
+        for mark, text, color in items:
+            row = tk.Frame(body, bg=SURFACE)
+            row.pack(fill="x", pady=S(3))
+            lbl(row, mark, 12, "semibold", color, SURFACE, width=3, anchor="w").pack(side="left")
+            lbl(row, text, 13, "medium", TEXT, SURFACE, anchor="w").pack(side="left")
+        btns = tk.Frame(body, bg=SURFACE)
+        btns.pack(fill="x", pady=(S(22), 0))
+        for text, command, kind_btn in reversed(buttons):
+            Btn(btns, text, command, kind=kind_btn, px=16, py=8, size=13).pack(
+                side="right", padx=(S(8), 0))
+        modal.place(relx=0.5, rely=0.45, anchor="center", width=S(width))
+        modal.lift()
+        self.modal = modal
+        self.modal_kind = kind
+        self.modal_opened_at = time.time()
+
+    def show_demo_welcome(self):
+        count, _ = database.get_totals()
+        items = [(str(i + 1), s["title"], SPOT) for i, s in enumerate(DEMO_STEPS)]
+        self._show_info_modal(
+            "welcome", "Welcome! Let's take a hands-on tour",
+            f"We loaded {count:,} sample files so you can practise safely: nothing on your "
+            "computer is touched. You will click the real buttons yourself, just follow the "
+            "pulsing blue outline. Stuck? Press “Show me” and the app does that step for you.",
+            items,
+            [("Skip tour", lambda: self.exit_demo_walkthrough(restore_clean=False), "default"),
+             ("Start the tour →", self.close_modal, "primary")])
+
+    def show_demo_finish(self, done, total, steps_done):
+        items = [("✓" if i in steps_done else "○", s["title"],
+                  SUCCESS if i in steps_done else TEXT_MUTED) for i, s in enumerate(DEMO_STEPS)]
+        if done >= total:
+            title = "You're all set!"
+            subtitle = (f"You completed all {total} hands-on missions across the 6 screens. "
+                        "Ready to organize your own files?")
+        else:
+            title = "Tour complete"
+            subtitle = (f"You completed {done} of {total} hands-on missions. You can replay the "
+                        "tour any time with the Demo button at the top.")
+
+        def scan_own():
+            self.close_modal()
+            self.choose_and_scan()
+
+        self._show_info_modal(
+            "finish", title, subtitle, items,
+            [("Replay tour", self.start_demo_walkthrough, "default"),
+             ("Keep exploring", self.close_modal, "default"),
+             ("Scan my own folder", scan_own, "primary")])
 
     def render_demo_bar(self):
-        clear(self.demo_bar_slot)
+        saved_y = self.scroll.canvas.yview()[0]
+        old_children = list(self.demo_bar_slot.winfo_children())
         if not self.demo_active:
+            for child in old_children:
+                child.destroy()
             return
 
-        step = DEMO_STEPS[self.demo_step_index]
+        idx = self.demo_step_index
+        step = DEMO_STEPS[idx]
         total = len(DEMO_STEPS)
-        is_first = self.demo_step_index == 0
-        is_last = self.demo_step_index == total - 1
-        is_done = self.demo_step_index in self.demo_completed
+        is_last = idx == total - 1
+        is_done = idx in self.demo_completed
+        done = self._demo_done(idx)
+        current = self._demo_current_task()
 
-        hline(self.demo_bar_slot, BORDER)
-        pad = tk.Frame(self.demo_bar_slot, bg=BG)
-        pad.pack(fill="x", padx=S(32), pady=S(12))
-
-        card_outer = tk.Frame(pad, bg=ACCENT)
+        wrap = tk.Frame(self.demo_bar_slot, bg=BG)
+        hline(wrap, BORDER)
+        pad = tk.Frame(wrap, bg=BG)
+        pad.pack(fill="x", padx=S(32), pady=S(10))
+        card_outer = tk.Frame(pad, bg=SPOT)
         card_outer.pack(fill="x")
         card = tk.Frame(card_outer, bg=SURFACE)
         card.pack(fill="x", padx=S(1), pady=S(1))
 
-        # Top progress strip
+        # Progress strip showing how many missions of the whole tour are done
+        all_tasks = sum(len(s["tasks"]) for s in DEMO_STEPS)
+        all_done = sum(len(v) for v in self.demo_done_tasks.values())
         prog_track = tk.Frame(card, bg=BORDER_LIGHT, height=S(3))
         prog_track.pack(fill="x")
         prog_track.pack_propagate(False)
-        tk.Frame(prog_track, bg=ACCENT).place(
-            relx=0, rely=0, relwidth=(self.demo_step_index + 1) / float(total), relheight=1.0)
+        if all_done:
+            tk.Frame(prog_track, bg=SUCCESS).place(relx=0, rely=0, relheight=1.0,
+                                                   relwidth=all_done / float(all_tasks))
 
         body = tk.Frame(card, bg=SURFACE)
-        body.pack(fill="x", padx=S(18), pady=S(12))
+        body.pack(fill="x", padx=S(18), pady=S(10))
+        body.columnconfigure(0, weight=1)
+        left = tk.Frame(body, bg=SURFACE)
+        left.grid(row=0, column=0, sticky="nsew")
+        right = tk.Frame(body, bg=SURFACE)
+        right.grid(row=0, column=1, sticky="ne", padx=(S(16), 0))
 
-        # Top row: DEMO X/6 badge, clickable step dots, Auto-Play & Close
-        top = tk.Frame(body, bg=SURFACE)
-        top.pack(fill="x")
+        # Left side: step badge + title, description, mission checklist, feedback
+        head = tk.Frame(left, bg=SURFACE)
+        head.pack(fill="x")
+        tk.Label(head, text=f"STEP {idx + 1} OF {total}", bg=SPOT, fg="#FFFFFF",
+                 font=FN(10, "semibold"), padx=S(8), pady=S(3), bd=0).pack(side="left")
+        lbl(head, step["title"], 14, "semibold", TEXT, SURFACE).pack(side="left", padx=(S(10), 0))
+        lbl(left, step["description"], 12, "regular", TEXT_SEC, SURFACE, wraplength=S(720),
+            justify="left").pack(anchor="w", pady=(S(4), S(6)))
 
-        badge = tk.Label(top, text=f"DEMO {self.demo_step_index + 1}/{total}",
-                         bg=ACCENT, fg=SURFACE, font=FN(10, "semibold"),
-                         padx=S(8), pady=S(3), bd=0)
-        badge.pack(side="left")
+        for task in step["tasks"]:
+            finished = task["event"] in done
+            active = current is task
+            row_bg = SPOT_BG if active else SURFACE
+            row = tk.Frame(left, bg=row_bg)
+            row.pack(fill="x", pady=S(1))
+            mark = "✓" if finished else ("●" if active else "○")
+            color = SUCCESS if finished else (SPOT if active else TEXT_MUTED)
+            lbl(row, mark, 12, "semibold", color, row_bg, width=2).pack(side="left", padx=(S(6), 0),
+                                                                       pady=S(3))
+            lbl(row, task["label"], 12, "semibold" if active else "medium",
+                TEXT_MUTED if finished else TEXT, row_bg).pack(side="left", pady=S(3))
+            if active:
+                lbl(row, "← do this now", 11, "semibold", SPOT, row_bg).pack(
+                    side="left", padx=(S(10), 0))
 
+        note = self.demo_last_note
+        if is_done:
+            if is_last:
+                tail = "All missions done! Click Finish to wrap up."
+            else:
+                nxt = DEMO_STEPS[idx + 1]["page"]
+                label = next(text for key, text, _ in NAV if key == nxt)
+                tail = f"Step complete! Click “{label}” in the sidebar or press Next →"
+            note = f"{note}  {tail}" if note else tail
+        if note:
+            note_box = tk.Frame(left, bg=SUCCESS_SOFT)
+            note_box.pack(fill="x", pady=(S(6), 0))
+            lbl(note_box, f"✓  {note}", 11, "medium", SUCCESS, SUCCESS_SOFT, padx=S(10),
+                pady=S(5), wraplength=S(720), justify="left").pack(anchor="w")
+
+        # Right side: clickable step dots + exit, then Show me / Back / Next
+        top = tk.Frame(right, bg=SURFACE)
+        top.pack(anchor="e")
         dots = tk.Frame(top, bg=SURFACE)
-        dots.pack(side="left", padx=(S(12), 0))
+        dots.pack(side="left")
         for i in range(total):
-            is_cur = i == self.demo_step_index
-            dot_w = S(22) if is_cur else S(8)
-            dot_col = ACCENT if is_cur else (TEXT_SEC if i in self.demo_completed else BORDER)
-            dot = tk.Frame(dots, bg=dot_col, width=dot_w, height=S(7), cursor="hand2")
+            is_cur = i == idx
+            dot_col = SPOT if is_cur else (SUCCESS if i in self.demo_completed else BORDER)
+            dot = tk.Frame(dots, bg=dot_col, width=S(22) if is_cur else S(8), height=S(7),
+                           cursor="hand2")
             dot.pack(side="left", padx=S(3))
             dot.pack_propagate(False)
             dot.bind("<Button-1>", lambda e, target=i: self.go_to_demo_step(target))
-
-        right_top = tk.Frame(top, bg=SURFACE)
-        right_top.pack(side="right")
-        auto_btn = Btn(right_top, "Pause Auto" if self.demo_autoplay else "Auto-Play",
-                       self.toggle_demo_autoplay,
-                       kind="primary" if self.demo_autoplay else "default",
-                       px=10, py=4, size=11)
-        auto_btn.pack(side="left", padx=(0, S(6)))
-        close_btn = tk.Label(right_top, text="✕", bg=SURFACE, fg=TEXT_MUTED,
-                             font=FN(13, "semibold"), padx=S(6), pady=S(2), cursor="hand2")
-        close_btn.pack(side="left")
+        close_btn = tk.Label(top, text="✕", bg=SURFACE, fg=TEXT_MUTED, font=FN(13, "semibold"),
+                             padx=S(6), pady=S(2), cursor="hand2")
+        close_btn.pack(side="left", padx=(S(8), 0))
         close_btn.bind("<Button-1>", lambda e: self.exit_demo_walkthrough(restore_clean=False))
 
-        # Step title & description
-        lbl(body, step["title"], 14, "semibold", TEXT, SURFACE).pack(anchor="w", pady=(S(8), S(2)))
-        lbl(body, step["description"], 12, "regular", TEXT_SEC, SURFACE,
-            wraplength=S(820), justify="left").pack(anchor="w")
+        show_btn = Btn(right, "Show me", self.demo_show_me, icon_name="eye", px=12, py=6, size=12)
+        show_btn.pack(anchor="e", pady=(S(12), S(8)), fill="x")
+        show_btn.set_enabled(current is not None)
 
-        # Live feedback note after executing the step's interactive action
-        if self.demo_last_note:
-            note_outer = tk.Frame(body, bg=BORDER)
-            note_outer.pack(fill="x", pady=(S(8), 0))
-            note_inner = tk.Frame(note_outer, bg=ACCENT_SOFT)
-            note_inner.pack(fill="x", padx=S(1), pady=S(1))
-            lbl(note_inner, f"✓  {self.demo_last_note}", 11, "medium", TEXT, ACCENT_SOFT,
-                padx=S(10), pady=S(5)).pack(anchor="w")
-
-        # Bottom controls: Try It on the left, Back + Next/Finish on the right
-        actions = tk.Frame(body, bg=SURFACE)
-        actions.pack(fill="x", pady=(S(10), 0))
-
-        action_label = step["done_label"] if is_done else step["action_label"]
-        action_icon = "check-circle" if is_done else "bolt"
-        Btn(actions, action_label, self.run_demo_step_action, icon_name=action_icon,
-            px=14, py=6, size=12).pack(side="left")
-
-        nav_btns = tk.Frame(actions, bg=SURFACE)
-        nav_btns.pack(side="right")
+        nav_btns = tk.Frame(right, bg=SURFACE)
+        nav_btns.pack(anchor="e")
         back_btn = Btn(nav_btns, "← Back", self.prev_demo_step, px=12, py=6, size=12)
         back_btn.pack(side="left", padx=(0, S(8)))
-        back_btn.set_enabled(not is_first)
-        Btn(nav_btns, "Finish Demo ✓" if is_last else "Next →", self.next_demo_step,
-            kind="primary", px=14, py=6, size=12).pack(side="left")
+        back_btn.set_enabled(idx > 0)
+        if is_last:
+            next_text = "Finish ✓" if is_done else "Finish tour"
+        else:
+            next_text = "Next →" if is_done else "Skip →"
+        next_btn = Btn(nav_btns, next_text, self.next_demo_step,
+                       kind="primary" if is_done else "default", px=14, py=6, size=12)
+        next_btn.pack(side="left")
+        self.demo_target("demo_next", next_btn, self.next_demo_step)
+        wrap.pack(fill="x")
+        for child in old_children:
+            child.destroy()
+        if saved_y > 0:
+            self.root.update_idletasks()
+            self.scroll.canvas.yview_moveto(saved_y)
 
     # Welcome screen shown before any folder has been scanned
     def render_intro(self):
@@ -1840,7 +2140,11 @@ class App:
             lbl(row, fmt_size(f["size_bytes"]), 13, "medium", TEXT_SEC, SURFACE, anchor="e").grid(
                 row=0, column=3, sticky="e")
             row.columnconfigure(3, minsize=S(72))
-            bind_tree(row, "<Button-1>", lambda e, file_id=f["id"]: self.show_details(file_id))
+            bind_tree(row, "<Button-1>",
+                      lambda e, file_id=f["id"]: self.show_details(file_id, "dashboard"))
+            if rank == 1:
+                self.demo_target("dash_largest", row,
+                                 lambda file_id=f["id"]: self.show_details(file_id, "dashboard"))
 
     # All Files screen with search box, dropdown filters, sorting, and List or Grid view
     def reset_filter_state(self):
@@ -1919,6 +2223,13 @@ class App:
         self.results_holder.pack(fill="x", pady=(S(24), 0))
         self.sync_sort_select()
 
+        def demo_pick_images():
+            self.category_select.set("Images")
+            self.filters_changed()
+
+        self.demo_target("files_category", self.category_select, demo_pick_images)
+        self.demo_target("files_grid", self.grid_btn, lambda: self.set_view("grid"))
+
     def toggle_more(self):
         self.more_open = not self.more_open
         if self.more_open:
@@ -1939,6 +2250,8 @@ class App:
             self.view_mode = mode
             self.update_view_buttons()
             self.render_results()
+        if mode == "grid":
+            self.demo_event("files_grid")
 
     def clear_filters(self):
         self.page_no = 1
@@ -1956,6 +2269,8 @@ class App:
             self.render_results()
         else:
             self.filter_after = self.root.after(220, self.render_results)
+        if self.demo_active and self.category_select.get() != CATEGORY_OPTIONS[0][0]:
+            self.demo_event("files_category")
 
     def sort_changed(self):
         label = self.sort_select.get()
@@ -2168,17 +2483,20 @@ class App:
                 return
             row_id = tree.identify_row(event.y)
             if row_id in iid_to_file:
-                self.show_details(iid_to_file[row_id])
+                self.show_details(iid_to_file[row_id], "files")
 
         def on_activate(event):
             sel = tree.selection()
             if sel and sel[0] in iid_to_file:
-                self.show_details(iid_to_file[sel[0]])
+                self.show_details(iid_to_file[sel[0]], "files")
 
         tree.bind("<Motion>", on_motion)
         tree.bind("<Leave>", on_leave)
         tree.bind("<ButtonRelease-1>", on_click)
         tree.bind("<Return>", on_activate)
+        if rows:
+            self.demo_target("files_card", tree,
+                             lambda file_id=rows[0]["id"]: self.show_details(file_id, "files"))
 
     # Builds the square photo and file cards for Grid View
     def build_grid(self, parent, rows):
@@ -2188,6 +2506,9 @@ class App:
         grid.pack(fill="x")
         cards = [self.build_file_card(grid, f) for f in rows]
         grid.set_items(cards)
+        if cards:
+            self.demo_target("files_card", cards[0],
+                             lambda file_id=rows[0]["id"]: self.show_details(file_id, "files"))
 
     def thumbnail_for(self, f, size):
         ext = (f["extension"] or "").lower()
@@ -2237,11 +2558,11 @@ class App:
 
         bind_tree(outer, "<Enter>", enter)
         bind_tree(outer, "<Leave>", leave)
-        bind_tree(outer, "<Button-1>", lambda e, i=f["id"]: self.show_details(i))
+        bind_tree(outer, "<Button-1>", lambda e, i=f["id"]: self.show_details(i, "files"))
         return outer
 
     # Opens a popup window with all file info, EXIF camera tags, and hash details when a file is clicked
-    def show_details(self, file_id):
+    def show_details(self, file_id, source=None):
         f = database.get_file(file_id)
         if not f:
             return
@@ -2305,7 +2626,8 @@ class App:
 
         head = tk.Frame(body, bg=SURFACE)
         head.pack(fill="x", pady=(0, S(16)))
-        close = Btn(head, "×", self.close_modal, px=10, py=2, size=15)
+        close = Btn(head, "×", lambda: self.close_modal(user=True), px=10, py=2, size=15)
+        self.demo_target("modal_close", close, lambda: self.close_modal(user=True))
         close.pack(side="right", anchor="n")
         lbl(head, ellipsize(f["name"], FM(18, "semibold"), S(370)), 18, "semibold", TEXT, SURFACE,
             anchor="w").pack(side="left", anchor="n")
@@ -2325,17 +2647,29 @@ class App:
 
         self.root.update_idletasks()
         wanted = scroller.inner.winfo_reqheight()
-        limit = int(self.root.winfo_height() * 0.68) - S(90)
+        ratio = 0.50 if self.demo_active else 0.68
+        limit = max(S(180), int(self.root.winfo_height() * ratio) - S(90))
         scroller.canvas.configure(height=min(wanted, limit))
-        modal.place(relx=0.5, rely=0.5, anchor="center", width=S(560))
+        modal.place(relx=0.5, rely=0.38 if self.demo_active else 0.5,
+                    anchor="center", width=S(560))
         modal.lift()
         self.modal = modal
+        self.modal_kind = "details"
         self.modal_opened_at = time.time()
+        if source:
+            self.demo_event("details:" + source)
 
-    def close_modal(self):
+    def close_modal(self, user=False):
+        """Closes any popup. user=True means the user closed it (× button, Esc, or outside click)."""
         if self.modal is not None:
+            kind = self.modal_kind
             self.modal.destroy()
             self.modal = None
+            self.modal_kind = None
+            if user and kind == "details":
+                self.demo_event("modal_closed")
+            if self.demo_active:
+                self._demo_spot_now()
 
     def maybe_close_modal(self, event):
         """Closes the details popup when the user clicks anywhere outside the popup box."""
@@ -2346,7 +2680,7 @@ class App:
             if widget is self.modal:
                 return
             widget = getattr(widget, "master", None)
-        self.close_modal()
+        self.close_modal(user=True)
 
     # Duplicates screen showing all identical twin file groups and their SHA 256 fingerprint
     def render_duplicates(self):
@@ -2380,13 +2714,13 @@ class App:
             return
 
         shown = groups[:150]
-        for group in shown:
-            self.build_dup_group(page, group)
+        for index, group in enumerate(shown):
+            self.build_dup_group(page, group, first=(index == 0))
         if len(groups) > len(shown):
             lbl(page, f"… and {len(groups) - len(shown)} more groups (the 150 biggest are shown)",
                 13, "medium", TEXT_MUTED, SURFACE).pack(anchor="w", pady=S(8))
 
-    def build_dup_group(self, page, group):
+    def build_dup_group(self, page, group, first=False):
         size = group[0]["size_bytes"]
         waste = size * (len(group) - 1)
         outer = tk.Frame(page, bg=BORDER)
@@ -2410,24 +2744,31 @@ class App:
         lbl(row, f"{fmt_size(waste)} wasted", 12, "medium", TEXT_SEC, BG).pack(side="right")
 
         holder = tk.Frame(inner, bg=SURFACE)
-        state = {"open": False, "built": False}
+        state = {"open": False, "built": False, "quarantine": None}
 
         def toggle(event=None):
             state["open"] = not state["open"]
             if state["open"]:
                 if not state["built"]:
-                    self.fill_dup_group(holder, group)
+                    state["quarantine"] = self.fill_dup_group(holder, group)
                     state["built"] = True
                 holder.pack(fill="x")
                 hline_top.pack(fill="x", before=holder)
+                if state["quarantine"] is not None:
+                    self.demo_target("dup_quarantine", *state["quarantine"])
             else:
                 holder.pack_forget()
                 hline_top.pack_forget()
             arrow.configure(text="▲" if state["open"] else "▼")
+            self.scroll.schedule_fit()
+            if state["open"]:
+                self.demo_event("dup_expand")
 
         hline_top = tk.Frame(inner, bg=BORDER, height=S(1))
         for widget in (header, row, *row.winfo_children()):
             widget.bind("<Button-1>", toggle)
+        if first:
+            self.demo_target("dup_group", outer, lambda: None if state["open"] else toggle())
 
     def quarantine_copy(self, file_row):
         """Bonus Feature: Safely moves a duplicate copy into the Quarantine folder and refreshes the screen."""
@@ -2437,6 +2778,7 @@ class App:
         self._page_version["duplicates"] = self._data_version
         self.scroll.schedule_fit()
         self.toast(f"Moved copy to Quarantine: {os.path.basename(dst)}")
+        self.demo_event("dup_quarantine")
 
     def fill_dup_group(self, holder, group):
         body = tk.Frame(holder, bg=SURFACE)
@@ -2446,6 +2788,7 @@ class App:
         lbl(line, "SHA-256: ", 12, "regular", TEXT_MUTED, SURFACE).pack(side="left")
         tk.Label(line, text=group[0]["hash"], font=mono(11), fg=TEXT_MUTED, bg=SURFACE,
                  bd=0).pack(side="left")
+        first_quarantine = None
         for index, f in enumerate(group):
             row = tk.Frame(body, bg=SURFACE)
             row.pack(fill="x")
@@ -2454,17 +2797,21 @@ class App:
                 side="left", pady=S(8))
             lbl(row, ellipsize(f["path"], FM(13, "medium"), S(360)), 13, "medium", TEXT,
                 SURFACE, anchor="w").pack(side="left", pady=S(8))
-            Btn(row, "Details", lambda file_id=f["id"]: self.show_details(file_id), px=10, py=4,
-                size=11).pack(side="right", pady=S(4))
+            Btn(row, "Details", lambda file_id=f["id"]: self.show_details(file_id, "duplicates"),
+                px=10, py=4, size=11).pack(side="right", pady=S(4))
             if index > 0:
-                Btn(row, "Quarantine Copy", lambda item=f: self.quarantine_copy(item),
-                    kind="danger", px=10, py=4, size=11).pack(side="right", padx=(0, S(8)), pady=S(4))
+                q_btn = Btn(row, "Quarantine Copy", lambda item=f: self.quarantine_copy(item),
+                            kind="danger", px=10, py=4, size=11)
+                q_btn.pack(side="right", padx=(0, S(8)), pady=S(4))
+                if first_quarantine is None:
+                    first_quarantine = (q_btn, lambda item=f: self.quarantine_copy(item))
             lbl(row, fmt_size(f["size_bytes"]), 13, "regular", TEXT_SEC, SURFACE).pack(
                 side="right", padx=S(12))
             if index < len(group) - 1:
                 hline(body, BORDER_LIGHT)
         lbl(body, "Safe Review Workflow: Quarantining moves extra copies into Duplicate_Quarantine without deleting originals.",
             12, "regular", TEXT_MUTED, SURFACE).pack(anchor="w", pady=(S(12), 0))
+        return first_quarantine
 
     # Visual Summaries (Charts) page showing Category Storage, Size Distribution, Top Extensions, and Activity Timeline
     def render_charts(self):
@@ -2478,13 +2825,18 @@ class App:
         outer, body = make_card(page, padding=24)
         outer.pack(fill="x", pady=(0, S(20)))
         self.card_title(body, "Storage Breakdown by Category")
-        for item in cat_data:
-            row = tk.Frame(body, bg=SURFACE)
+        lbl(body, "Click a category to see its largest files.", 12, "regular", TEXT_MUTED,
+            SURFACE).pack(anchor="w", pady=(0, S(8)))
+        for cat_index, item in enumerate(cat_data):
+            wrap = tk.Frame(body, bg=SURFACE)
+            wrap.pack(fill="x")
+            row = tk.Frame(wrap, bg=SURFACE, cursor="hand2")
             row.pack(fill="x", pady=S(6))
             row.columnconfigure(1, weight=1)
             row.columnconfigure(0, minsize=S(120))
             row.columnconfigure(2, minsize=S(100))
             row.columnconfigure(3, minsize=S(110))
+            row.columnconfigure(4, minsize=S(24))
 
             left = tk.Frame(row, bg=SURFACE)
             left.grid(row=0, column=0, sticky="w")
@@ -2498,6 +2850,10 @@ class App:
                 SURFACE, anchor="e").grid(row=0, column=2, sticky="e", padx=(0, S(12)))
             lbl(row, f"{item['count']:,} files", 12, "regular", TEXT_MUTED, SURFACE,
                 anchor="e").grid(row=0, column=3, sticky="e")
+            arrow = lbl(row, "▼", 10, "regular", TEXT_MUTED, SURFACE, anchor="e")
+            arrow.grid(row=0, column=4, sticky="e")
+            drill = tk.Frame(wrap, bg=BG)
+            self.bind_chart_drill(row, drill, arrow, item["category"], first=(cat_index == 0))
 
         # 2. File Size Distribution Tiers (Small, Medium, Large, Huge)
         size_data = charts.get_size_distribution()
@@ -2561,6 +2917,75 @@ class App:
                     anchor="e").grid(row=0, column=2, sticky="e", padx=(0, S(12)))
                 lbl(row, m["size_readable"], 12, "regular", TEXT_MUTED, SURFACE,
                     anchor="e").grid(row=0, column=3, sticky="e")
+
+    def bind_chart_drill(self, row, drill, arrow, category, first=False):
+        """Makes a chart category row clickable: it expands to list that category's largest files."""
+        state = {"open": False, "built": False, "first_file": None}
+
+        def toggle(event=None):
+            state["open"] = not state["open"]
+            if state["open"]:
+                if not state["built"]:
+                    state["first_file"] = self.fill_chart_drill(drill, category)
+                    state["built"] = True
+                drill.pack(fill="x", pady=(0, S(8)))
+                if state["first_file"] is not None:
+                    self.demo_target("charts_file", *state["first_file"])
+            else:
+                drill.pack_forget()
+            arrow.configure(text="▲" if state["open"] else "▼")
+            self.scroll.schedule_fit()
+            if state["open"]:
+                self.demo_event("charts_category")
+
+        def enter(event):
+            swap_bg(row, SURFACE, GLOW_BG)
+
+        def leave(event):
+            if not pointer_inside(row, event):
+                swap_bg(row, GLOW_BG, SURFACE)
+
+        bind_tree(row, "<Button-1>", toggle)
+        bind_tree(row, "<Enter>", enter)
+        bind_tree(row, "<Leave>", leave)
+        if first:
+            self.demo_target("charts_cat", row, lambda: None if state["open"] else toggle())
+
+    def fill_chart_drill(self, holder, category):
+        files = database.search_files(category=category, sort_by="Size", descending=True, limit=5)
+        inner = tk.Frame(holder, bg=BG)
+        inner.pack(fill="x", padx=S(16), pady=S(10))
+        lbl(inner, sp(f"LARGEST {category.upper()} FILES"), 10, "semibold", TEXT_MUTED, BG).pack(
+            anchor="w", pady=(0, S(6)))
+        first = None
+        for f in files:
+            r = tk.Frame(inner, bg=BG, cursor="hand2")
+            r.pack(fill="x", pady=S(1))
+            lbl(r, ellipsize(f["name"], FM(12, "medium"), S(320)), 12, "medium", TEXT, BG).pack(
+                side="left", pady=S(4), padx=(S(6), 0))
+            lbl(r, fmt_size(f["size_bytes"]), 12, "regular", TEXT_SEC, BG).pack(
+                side="right", padx=(0, S(6)))
+            lbl(r, f["parent_folder"] or "", 11, "regular", TEXT_MUTED, BG).pack(
+                side="right", padx=S(16))
+
+            def open_file(file_id=f["id"]):
+                self.show_details(file_id, "charts")
+
+            def enter(event, r=r):
+                swap_bg(r, BG, BORDER_LIGHT)
+
+            def leave(event, r=r):
+                if not pointer_inside(r, event):
+                    swap_bg(r, BORDER_LIGHT, BG)
+
+            bind_tree(r, "<Button-1>", lambda e, action=open_file: action())
+            bind_tree(r, "<Enter>", enter)
+            bind_tree(r, "<Leave>", leave)
+            if first is None:
+                first = (r, open_file)
+        if not files:
+            lbl(inner, "No files in this category.", 12, "regular", TEXT_MUTED, BG).pack(anchor="w")
+        return first
 
     # Organize Files page with Date-Based Photo Organization, Dry-Run Preview, Safe Copy/Move, Undo, and ZIP Backup
     def render_organize(self):
@@ -2681,6 +3106,7 @@ class App:
             action_word = "Copied" if copy_only else "Moved"
             self.toast(f"{action_word} {len(completed):,} files ({len(errors)} errors)")
             show_dry_run()
+            self.demo_event("org_run")
 
         def run_undo():
             if not organizer.can_undo():
@@ -2689,6 +3115,7 @@ class App:
             undone, errors = organizer.undo_last_organize()
             undo_btn.set_enabled(organizer.can_undo())
             self.toast(f"Undid last organization for {undone:,} files")
+            self.demo_event("org_undo")
 
         def run_zip_backup():
             default_zip = os.path.join(BASE_DIR, f"Backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip")
@@ -2704,15 +3131,30 @@ class App:
 
         Btn(btn_row, "Preview Plan (Dry Run)", show_dry_run, icon_name="eye").pack(
             side="left", padx=(0, S(8)))
-        Btn(btn_row, "Organize Files Now", run_organize, icon_name="folder",
-            kind="primary").pack(side="left", padx=(0, S(8)))
+        organize_btn = Btn(btn_row, "Organize Files Now", run_organize, icon_name="folder",
+                           kind="primary")
+        organize_btn.pack(side="left", padx=(0, S(8)))
         Btn(btn_row, "Create ZIP Backup First", run_zip_backup, icon_name="file-down").pack(
             side="left", padx=(0, S(8)))
         undo_btn = Btn(btn_row, "Undo Last Run", run_undo, icon_name="refresh")
         undo_btn.pack(side="left")
         undo_btn.set_enabled(organizer.can_undo())
 
-        self.org_strategy_select.command = show_dry_run
+        def on_strategy_chosen():
+            show_dry_run()
+            self.demo_event("org_strategy")
+
+        def demo_pick_strategy():
+            labels = [c[0] for c in strategy_choices]
+            current = self.org_strategy_select.get()
+            self.org_strategy_select.set(labels[1] if current != labels[1] else labels[0])
+            on_strategy_chosen()
+
+        self._org_show_dry_run = show_dry_run
+        self.org_strategy_select.command = on_strategy_chosen
+        self.demo_target("org_strategy", self.org_strategy_select, demo_pick_strategy)
+        self.demo_target("org_run", organize_btn, run_organize)
+        self.demo_target("org_undo", undo_btn, run_undo)
         show_dry_run()
 
     # Export, ZIP Backup, Integrity Verification, and Scan History / Snapshot Comparison page
@@ -2803,10 +3245,14 @@ class App:
                          font=mono(11), fg=TEXT_MUTED, bg=SURFACE, bd=0).pack(side="left")
 
             self.toast(f"Integrity verified: {intact_n:,} intact, {mod_n:,} modified, {miss_n:,} missing")
+            self.scroll.schedule_fit()
+            self.demo_event("export_verify")
 
         self._export_run_integrity = run_integrity_check
-        Btn(i_body, "Verify File Integrity Now", run_integrity_check, icon_name="check-circle",
-            kind="primary").pack(anchor="w")
+        verify_btn = Btn(i_body, "Verify File Integrity Now", run_integrity_check,
+                         icon_name="check-circle", kind="primary")
+        verify_btn.pack(anchor="w")
+        self.demo_target("export_verify", verify_btn, run_integrity_check)
         integrity_result_box.pack(fill="x")
 
         # 3. Bonus Feature: Saved Scan History & Comparison of Two Folder Snapshots
@@ -2825,10 +3271,11 @@ class App:
             database.save_scan_snapshot(self.meta.get("root_folder", "Current"), now_str)
             history = database.get_scan_history(limit=20)
 
-        snap_labels = [
-            f"#{h['id']} — {h['scan_date']} — {os.path.basename(h['root_folder']) or h['root_folder']} ({h['total_files']} files, {fmt_size(h['total_bytes'])})"
-            for h in history
-        ] or ["No snapshots yet"]
+        def snap_label(h):
+            return (f"#{h['id']} — {h['scan_date']} — {os.path.basename(h['root_folder']) or h['root_folder']}"
+                    f" ({h['total_files']} files, {fmt_size(h['total_bytes'])})")
+
+        snap_labels = [snap_label(h) for h in history] or ["No snapshots yet"]
 
         snap_bar = Flow(h_body, gap_x=12, gap_y=12)
         snap_bar.pack(fill="x", pady=(0, S(12)))
@@ -2887,19 +3334,32 @@ class App:
                     lbl(r, ellipsize(name, FM(12, "medium"), S(220)), 12, "medium", TEXT,
                         SURFACE, width=24, anchor="w").pack(side="left")
                     lbl(r, detail, 12, "regular", TEXT_SEC, SURFACE).pack(side="right")
+            self.scroll.schedule_fit()
+            self.demo_event("export_compare")
 
         def save_manual_snapshot():
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             database.save_scan_snapshot(self.meta.get("root_folder", "Snapshot"), now_str)
-            self.render_export()
+            # Refresh the two snapshot dropdowns in place so integrity results stay on screen
+            labels = [snap_label(h) for h in database.get_scan_history(limit=20)] or ["No snapshots yet"]
+            for box in (older_select, newer_select):
+                box.configure(values=labels)
+            older_select.current(1 if len(labels) >= 2 else 0)
+            newer_select.current(0)
+            clear(diff_box)
             self.toast("Saved current inventory as a new scan snapshot")
+            self.demo_event("export_snapshot")
 
         action_row = tk.Frame(h_body, bg=SURFACE)
         action_row.pack(fill="x")
-        Btn(action_row, "Compare Two Snapshots", run_snapshot_compare, icon_name="copy",
-            kind="primary").pack(side="left", padx=(0, S(8)))
-        Btn(action_row, "Save Current Snapshot", save_manual_snapshot, icon_name="upload").pack(
-            side="left")
+        compare_btn = Btn(action_row, "Compare Two Snapshots", run_snapshot_compare,
+                          icon_name="copy", kind="primary")
+        compare_btn.pack(side="left", padx=(0, S(8)))
+        snapshot_btn = Btn(action_row, "Save Current Snapshot", save_manual_snapshot,
+                           icon_name="upload")
+        snapshot_btn.pack(side="left")
+        self.demo_target("export_compare", compare_btn, run_snapshot_compare)
+        self.demo_target("export_snapshot", snapshot_btn, save_manual_snapshot)
         diff_box.pack(fill="x")
 
 
